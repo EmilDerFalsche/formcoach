@@ -2,6 +2,9 @@ import { initPose, detect, drawPose, ISSUE_JOINTS } from "./pose.js";
 import { SquatAnalyzer, THRESHOLDS } from "./squatAnalyzer.js";
 import { SquatClassifier } from "./classifier.js";
 import { ISSUES, ML_LABEL_TEXT, Voice, repCue, summarize } from "./feedback.js";
+import { Cloud, uuid } from "./cloud.js";
+
+const cloud = new Cloud();
 
 const $ = (id) => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
@@ -219,7 +222,9 @@ function finish() {
     trace: trace.map((p) => ({ t: Math.round(p.t), d: Math.round(p.d * 1000) / 1000 })),
   };
   renderResult(reps, sum, trace, view);
-  saveHistory(reps, sum, view);
+  $("btn-export").hidden = false;
+  $("res-saved").hidden = true;
+  if (reps.length) saveWorkout(buildWorkout(reps, sum, trace, view));
   if ($("opt-voice").checked && reps.length) {
     voice.enabled = true;
     voice.say(`${reps.length} Wiederholungen. Durchschnitt ${sum.avgScore} Punkte. ${sum.ranked[0] ? "Fokus: " + sum.ranked[0].title : "Sehr sauber!"}`, { force: true });
@@ -265,12 +270,13 @@ function renderResult(reps, sum, trace, view) {
         <li>Tiefe: ${m.depth >= 0 ? "unter parallel ✓" : `${Math.round(-m.depth * 100)} % über parallel`}</li>
         <li>Min. Kniewinkel: ${Math.round(m.kneeMin)}°</li>
         ${view !== "front" ? `<li>Oberkörper-Vorlage: ${Math.round(m.trunk)}°</li>` : ""}
-        ${view !== "side" ? `<li>Knie-/Fußbreite: ${Math.round(m.kneeRatio * 100)} % des Stands</li>` : ""}
+        ${view !== "side" && Number.isFinite(m.kneeRatio) ? `<li>Knie-/Fußbreite: ${Math.round(m.kneeRatio * 100)} % des Stands</li>` : ""}
         <li>Absenken: ${m.descentSec.toFixed(1)} s · gesamt ${m.durationSec.toFixed(1)} s</li>
         ${ml}
       </ul>`;
     list.appendChild(el);
   });
+  $("chart-panel").hidden = trace.length < 2;
   drawChart(trace, reps);
 }
 
@@ -303,30 +309,271 @@ function drawChart(trace, reps) {
   g.stroke();
 }
 
-// ---------- Verlauf ----------
-const HISTORY_KEY = "formcoach.history";
-function readHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch { return []; }
+// ---------- Speichern & Verlauf ----------
+const r2 = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) / 100 : v ?? null);
+const roundObj = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k, r2(v)]));
+
+/** Kompakte Darstellung eines Satzes für Verlauf / Datenbank (ohne Rohdaten pro Frame). */
+function buildWorkout(reps, sum, trace, view) {
+  const step = Math.max(1, Math.ceil(trace.length / 300));
+  return {
+    client_id: uuid(),
+    performed_at: new Date().toISOString(),
+    exercise: "squat",
+    mode, view,
+    rep_count: reps.length,
+    avg_score: sum.avgScore,
+    top_issue: sum.ranked[0]?.key ?? null,
+    reps: reps.map((r) => ({
+      index: r.index, score: r.score, view: r.view,
+      start: Math.round(r.start), end: Math.round(r.end),
+      issues: r.issues.map(({ key, severity }) => ({ key, severity })),
+      metrics: roundObj(r.metrics), depthParts: r.depthParts,
+    })),
+    trace: trace.filter((_, i) => i % step === 0).map((p) => ({ t: Math.round(p.t), d: Math.round(p.d * 1000) / 1000 })),
+  };
 }
-function saveHistory(reps, sum, view) {
-  if (!reps.length) return;
-  const h = readHistory();
-  h.unshift({ date: new Date().toISOString(), mode, reps: reps.length, score: sum.avgScore, view, focus: sum.ranked[0]?.title ?? null });
-  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 50))); } catch {}
+
+async function saveWorkout(row) {
+  let status;
+  try { status = await cloud.saveWorkout(row); } catch (e) { console.error(e); status = "queued"; }
+  showSaveStatus(status);
   renderHistory();
 }
-function renderHistory() {
-  const h = readHistory();
+
+function showSaveStatus(status) {
+  const el = $("res-saved");
+  el.className = "save-status";
+  if (status === "saved") {
+    el.classList.add("ok");
+    el.innerHTML = `<svg><use href="#i-cloud" /></svg>In deinem Konto gespeichert`;
+  } else if (status === "queued") {
+    el.innerHTML = `<svg><use href="#i-cloud" /></svg>Wird hochgeladen, sobald du online bist`;
+  } else if (cloud.enabled) {
+    el.innerHTML = `Nur auf diesem Gerät gespeichert · <button id="res-login">Anmelden</button>, um deine Sätze zu sichern`;
+    $("res-login").addEventListener("click", openAccount);
+  } else {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+}
+
+const fmtDate = (iso) => {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("de-DE")} ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`;
+};
+
+async function renderHistory() {
+  let res;
+  try { res = await cloud.listWorkouts(); } catch (e) { console.warn(e); return; }
+  const { source, items } = res;
   const ul = $("history");
-  $("history-panel").hidden = !h.length;
+  $("history-panel").hidden = !items.length && !cloud.loggedIn;
+  const badge = $("history-source");
+  badge.className = `sync-badge ${source === "cloud" ? "cloud" : ""}`;
+  badge.textContent = source === "cloud" ? "☁ synchronisiert" : source === "cache" ? "offline" : cloud.enabled ? "nur dieses Gerät" : "";
+  $("history-hint").hidden = items.length > 0;
+  $("history-hint").textContent = "Noch keine Sätze in deinem Konto – leg los!";
   ul.innerHTML = "";
-  h.slice(0, 10).forEach((e) => {
-    const d = new Date(e.date);
+  items.slice(0, 15).forEach((e) => {
     const li = document.createElement("li");
-    li.innerHTML = `<span class="h-score ${scoreClass(e.score)}">${e.score}</span><span><b>${e.reps} Wdh.</b> · ${e.mode === "live" ? "Live" : "Video"} · ${VIEW_TEXT[e.view] ?? ""}<small>${d.toLocaleDateString("de-DE")} ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}${e.focus ? " · Fokus: " + e.focus : ""}</small></span>`;
+    const focus = ISSUES[e.top_issue]?.title ?? e.top_issue_title;
+    const hasDetail = Array.isArray(e.reps) && e.reps.length > 0;
+    li.className = hasDetail ? "" : "no-detail";
+    li.innerHTML = `<span class="h-score ${scoreClass(e.avg_score ?? 0)}">${e.avg_score ?? "–"}</span><span><b>${e.rep_count} Wdh.</b> · ${e.mode === "video" ? "Video" : "Live"} · ${VIEW_TEXT[e.view] ?? ""}${e.pending ? '<i class="pending-dot" title="Noch nicht hochgeladen"></i>' : ""}<small>${fmtDate(e.performed_at)}${focus ? " · Fokus: " + focus : ""}</small></span>`;
+    if (hasDetail) li.addEventListener("click", () => openWorkout(e));
     ul.appendChild(li);
   });
 }
+
+/** Gespeicherten Satz in der Ergebnisansicht öffnen. */
+function openWorkout(w) {
+  const reps = w.reps.map((r) => ({ ...r, issues: r.issues ?? [], metrics: r.metrics ?? {} }));
+  renderResult(reps, summarize(reps), w.trace ?? [], w.view);
+  $("res-title").textContent = `${fmtDate(w.performed_at)} · ${w.rep_count} Wdh.`;
+  $("btn-export").hidden = true;
+  $("res-saved").hidden = true;
+  mode = w.mode;
+  show("screen-result");
+}
+
+// ---------- Konto ----------
+let authMode = "login";
+const toast = (msg) => {
+  document.querySelectorAll(".toast").forEach((t) => t.remove());
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+};
+const setMsg = (id, text, kind = "") => { const el = $(id); el.textContent = text || ""; el.className = `form-msg ${kind}`; };
+
+function updateAccountButton() {
+  $("btn-account").hidden = !cloud.enabled;
+  const email = cloud.user?.email;
+  $("acc-label").textContent = email ? email.split("@")[0] : "Anmelden";
+  $("acc-avatar").innerHTML = email ? email[0].toUpperCase() : `<svg><use href="#i-user" /></svg>`;
+}
+
+function setAuthMode(m) {
+  authMode = m;
+  document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.mode === m));
+  $("acc-password2-row").hidden = m !== "register";
+  $("acc-forgot").hidden = m !== "login";
+  $("acc-submit").textContent = m === "login" ? "Anmelden" : "Konto erstellen";
+  $("acc-password").autocomplete = m === "login" ? "current-password" : "new-password";
+  setMsg("acc-msg", m === "register" ? "Mindestens 8 Zeichen. Du bekommst eine E-Mail zur Bestätigung." : "");
+}
+
+async function renderAccount() {
+  const on = (id, v) => ($(id).hidden = !v);
+  on("acc-disabled", !cloud.enabled);
+  on("acc-recovery", cloud.enabled && cloud.recovery);
+  on("acc-auth", cloud.enabled && !cloud.recovery && !cloud.loggedIn);
+  on("acc-profile", cloud.enabled && !cloud.recovery && cloud.loggedIn);
+  if (!cloud.loggedIn || cloud.recovery) return;
+
+  const email = cloud.user.email;
+  $("acc-name").textContent = email;
+  $("acc-avatar-big").textContent = email[0].toUpperCase();
+  const pending = cloud.pendingCount();
+  $("acc-sync").textContent = pending ? `${pending} Satz/Sätze warten auf Upload` : navigator.onLine ? "Alles synchronisiert ✓" : "Offline";
+
+  const { items } = await cloud.listWorkouts();
+  const scored = items.filter((i) => typeof i.avg_score === "number");
+  $("st-sets").textContent = items.length;
+  $("st-reps").textContent = items.reduce((s, i) => s + (i.rep_count || 0), 0);
+  const last10 = scored.slice(0, 10);
+  $("st-score").textContent = last10.length ? Math.round(last10.reduce((s, i) => s + i.avg_score, 0) / last10.length) : "–";
+  drawProgress(scored.slice(0, 30).reverse());
+}
+
+function drawProgress(items) {
+  const c = $("acc-chart");
+  const dpr = devicePixelRatio;
+  const w = (c.width = (c.clientWidth || 300) * dpr), h = (c.height = 140 * dpr);
+  const g = c.getContext("2d");
+  g.clearRect(0, 0, w, h);
+  $("acc-chart-hint").textContent = items.length < 2 ? "Nach ein paar Sätzen siehst du hier deinen Fortschritt." : "Ø Score pro Satz – je höher, desto sauberer.";
+  if (items.length < 2) return;
+  const pad = 10 * dpr;
+  const X = (i) => pad + (i / (items.length - 1)) * (w - 2 * pad);
+  const Y = (s) => h - pad - (s / 100) * (h - 2 * pad);
+  g.strokeStyle = "rgba(148,163,184,0.25)"; g.lineWidth = dpr; g.setLineDash([4 * dpr, 4 * dpr]);
+  [50, 85].forEach((s) => { g.beginPath(); g.moveTo(0, Y(s)); g.lineTo(w, Y(s)); g.stroke(); });
+  g.setLineDash([]);
+  const grad = g.createLinearGradient(0, 0, w, 0);
+  grad.addColorStop(0, "#22d3ee"); grad.addColorStop(1, "#818cf8");
+  g.strokeStyle = grad; g.lineWidth = 2.5 * dpr; g.lineJoin = "round";
+  g.beginPath();
+  items.forEach((it, i) => (i ? g.lineTo(X(i), Y(it.avg_score)) : g.moveTo(X(i), Y(it.avg_score))));
+  g.stroke();
+  items.forEach((it, i) => {
+    g.fillStyle = it.avg_score >= 85 ? "#34d399" : it.avg_score >= 60 ? "#fbbf24" : "#fb7185";
+    g.beginPath(); g.arc(X(i), Y(it.avg_score), 3.5 * dpr, 0, Math.PI * 2); g.fill();
+  });
+}
+
+function openAccount() {
+  setAuthMode(authMode);
+  show("screen-account");
+  renderAccount();
+}
+
+async function withBusy(btn, fn) {
+  btn.disabled = true;
+  try { return await fn(); } finally { btn.disabled = false; }
+}
+
+$("btn-account").addEventListener("click", openAccount);
+$("acc-back").addEventListener("click", () => show("screen-home"));
+document.querySelectorAll(".seg").forEach((b) => b.addEventListener("click", () => setAuthMode(b.dataset.mode)));
+
+$("acc-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const email = $("acc-email").value.trim();
+  const pw = $("acc-password").value;
+  if (!/^\S+@\S+\.\S+$/.test(email)) return setMsg("acc-msg", "Bitte gib eine gültige E-Mail-Adresse ein.", "error");
+  if (pw.length < 8) return setMsg("acc-msg", "Das Passwort muss mindestens 8 Zeichen haben.", "error");
+  if (authMode === "register" && pw !== $("acc-password2").value) return setMsg("acc-msg", "Die Passwörter stimmen nicht überein.", "error");
+  withBusy($("acc-submit"), async () => {
+    setMsg("acc-msg", authMode === "login" ? "Melde an …" : "Erstelle Konto …");
+    if (authMode === "login") {
+      const { error } = await cloud.signIn(email, pw);
+      if (error) return setMsg("acc-msg", error, "error");
+      $("acc-password").value = "";
+      toast("Angemeldet ✓");
+      updateAccountButton();
+      renderAccount();
+      renderHistory();
+    } else {
+      const { error, needsConfirmation } = await cloud.signUp(email, pw);
+      if (error) return setMsg("acc-msg", error, "error");
+      $("acc-password").value = ""; $("acc-password2").value = "";
+      if (needsConfirmation) {
+        setMsg("acc-msg", "Fast geschafft! Wir haben dir eine E-Mail geschickt. Tippe auf den Link darin, um dein Konto zu bestätigen – danach kannst du dich hier anmelden.", "ok");
+        setAuthMode("login");
+        setMsg("acc-msg", "Bestätigungs-E-Mail verschickt ✓ Nach dem Bestätigen kannst du dich hier anmelden.", "ok");
+      } else {
+        toast("Konto erstellt ✓");
+        renderAccount();
+      }
+    }
+  });
+});
+
+$("acc-forgot").addEventListener("click", () => {
+  const email = $("acc-email").value.trim();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return setMsg("acc-msg", "Gib oben deine E-Mail-Adresse ein, dann schicken wir dir einen Link.", "error");
+  withBusy($("acc-forgot"), async () => {
+    const { error } = await cloud.resetPassword(email);
+    setMsg("acc-msg", error || "Falls ein Konto existiert, ist eine E-Mail zum Zurücksetzen unterwegs.", error ? "error" : "ok");
+  });
+});
+
+$("acc-recovery").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const pw = $("acc-newpass").value;
+  if (pw.length < 8) return setMsg("acc-recovery-msg", "Mindestens 8 Zeichen.", "error");
+  withBusy(ev.submitter || $("acc-recovery").querySelector("button"), async () => {
+    const { error } = await cloud.updatePassword(pw);
+    if (error) return setMsg("acc-recovery-msg", error, "error");
+    $("acc-newpass").value = "";
+    toast("Passwort geändert ✓");
+    renderAccount();
+  });
+});
+
+$("acc-logout").addEventListener("click", async () => {
+  await cloud.signOut();
+  toast("Abgemeldet");
+  updateAccountButton();
+  renderAccount();
+  renderHistory();
+});
+
+$("acc-delete").addEventListener("click", async () => {
+  if (!confirm("Konto wirklich löschen?\n\nAlle gespeicherten Sätze werden endgültig gelöscht. Das kann nicht rückgängig gemacht werden.")) return;
+  const { error } = await cloud.deleteAccount();
+  if (error) return toast(`Löschen fehlgeschlagen: ${error}`);
+  toast("Konto gelöscht");
+  updateAccountButton();
+  renderAccount();
+  renderHistory();
+});
+
+cloud.onChange((type, info) => {
+  if (type === "auth" || type === "ready") {
+    updateAccountButton();
+    renderHistory();
+    if (cloud.recovery) openAccount();
+    else if (document.getElementById("screen-account").classList.contains("active")) renderAccount();
+  }
+  if (type === "migrated") toast(`${info} Satz/Sätze von diesem Gerät ins Konto übernommen`);
+  if (type === "synced") { renderHistory(); if ($("screen-account").classList.contains("active")) renderAccount(); }
+});
 
 // ---------- Events ----------
 $("btn-live").addEventListener("click", startLive);
@@ -354,10 +601,12 @@ $("btn-again").addEventListener("click", () => (mode === "video" ? $("file-input
 $("btn-home").addEventListener("click", () => show("screen-home"));
 
 loadSettings();
+updateAccountButton();
 renderHistory();
+cloud.init();
 // Debug-Hook für Tests ohne Kamera: index.html?debug
 if (new URLSearchParams(location.search).has("debug")) {
-  window.__formcoach = { renderResult, summarize, show };
+  window.__formcoach = { renderResult, summarize, show, cloud, buildWorkout, saveWorkout, renderHistory, openAccount };
 }
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});

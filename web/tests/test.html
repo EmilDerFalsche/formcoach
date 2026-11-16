@@ -19,9 +19,13 @@
     const maxErr = Math.max(...ref.map(r => Math.max(...clf.predict(r.x).map((p, i) => Math.abs(p - r.p[i])))));
     html += `\n<span class="${maxErr < 1e-6 ? "ok" : "fail"}">${maxErr < 1e-6 ? "✓" : "✗"} Klassifikator JS == Python (max. Abweichung ${maxErr.toExponential(2)})</span>`;
   } catch (e) { html += `\n(Keine classifier_reference.json – Klassifikator-Abgleich übersprungen)`; }
-  const pass = res.every(r => r.ok);
+  // Konto & Synchronisierung (simulierter Supabase-Server)
+  const { runCloudTests } = await import("./cloud.test.js");
+  const cres = await runCloudTests();
+  html += "\n\n<b>Konto & Synchronisierung</b>\n" + cres.map(r => `<span class="${r.ok ? "ok" : "fail"}">${r.ok ? "✓" : "✗"} ${r.name}</span>${r.info && !r.ok ? " – " + r.info : ""}`).join("\n");
+  const pass = res.every(r => r.ok) && cres.every(r => r.ok);
   out.innerHTML = html;
-  window.__testResult = { pass, res };
+  window.__testResult = { pass, res, cres };
 </script>
 </body>
 </html>
