@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8" /><title>FormCoach Tests</title>
+<style>body{font:14px system-ui;background:#0b1220;color:#e6edf7;padding:16px}.ok{color:#4ade80}.fail{color:#f87171}pre{white-space:pre-wrap}</style></head>
+<body>
+<h1>FormCoach – Selbsttest</h1>
+<pre id="out">läuft …</pre>
+<script type="module">
+  import { runTests } from "./synthetic.js";
+  import { SquatClassifier } from "../js/classifier.js";
+  const out = document.getElementById("out");
+  const res = runTests();
+  let html = res.map(r => `<span class="${r.ok ? "ok" : "fail"}">${r.ok ? "✓" : "✗"} ${r.name}</span> – Wdh: ${r.reps}, Ansicht: ${r.view}, Fehler: [${r.found.join(", ")}]` +
+    (r.ok ? "" : `\n   Metriken: ${JSON.stringify(r.metrics, (k, v) => typeof v === "number" ? +v.toFixed(3) : v)}`)).join("\n");
+  // Klassifikator gegen Referenzwerte aus Python prüfen
+  const clf = await SquatClassifier.load("../model/squat_model.json");
+  try {
+    const ref = await (await fetch("classifier_reference.json")).json();
+    const maxErr = Math.max(...ref.map(r => Math.max(...clf.predict(r.x).map((p, i) => Math.abs(p - r.p[i])))));
+    html += `\n<span class="${maxErr < 1e-6 ? "ok" : "fail"}">${maxErr < 1e-6 ? "✓" : "✗"} Klassifikator JS == Python (max. Abweichung ${maxErr.toExponential(2)})</span>`;
+  } catch (e) { html += `\n(Keine classifier_reference.json – Klassifikator-Abgleich übersprungen)`; }
+  const pass = res.every(r => r.ok);
+  out.innerHTML = html;
+  window.__testResult = { pass, res };
+</script>
+</body>
+</html>

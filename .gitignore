@@ -1,0 +1,18 @@
+# Lokale Umgebung
+.venv/
+__pycache__/
+*.pyc
+
+# Selbstsigniertes Zertifikat (privater Schlüssel!)
+tools/cert/
+
+# Persönliche Messdaten
+data/recordings/
+
+# Kaggle-Dataset (CC BY-SA 4.0) – siehe README, wird lokal heruntergeladen
+data/*.csv
+
+# Editor / OS
+.claude/
+.DS_Store
+Thumbs.db

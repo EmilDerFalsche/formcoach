@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#070b14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>FormCoach – Kniebeugen-Analyse</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- SVG-Icons -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4"/><path d="M4 17v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 11V5.5a1.5 1.5 0 0 1 3 0V10"/><path d="M11 10V4a1.5 1.5 0 0 1 3 0v6"/><path d="M14 10V5.5a1.5 1.5 0 0 1 3 0V13"/><path d="M8 11 6.6 9.6a1.6 1.6 0 0 0-2.3 2.2l3.4 4.4A6 6 0 0 0 12.4 19h.6a4 4 0 0 0 4-4v-2"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
+  </svg>
+
+  <!-- Startseite -->
+  <section id="screen-home" class="screen active">
+    <header class="topbar">
+      <img src="icon.svg" alt="" class="logo" />
+      <span class="brand">FormCoach</span>
+      <span class="tag">Kniebeuge</span>
+    </header>
+
+    <div class="hero">
+      <h1>Saubere Kniebeugen.<br /><span class="grad">Mit deiner Kamera.</span></h1>
+      <p class="sub">Die App analysiert deine Technik in Echtzeit und sagt dir nach jeder Wiederholung, was du verbessern kannst. Videos bleiben auf deinem Gerät.</p>
+    </div>
+
+    <div class="cards">
+      <button class="card primary" id="btn-live">
+        <span class="card-icon"><svg><use href="#i-camera" /></svg></span>
+        <span class="card-text"><strong>Live-Training</strong><small>Feedback nach jeder Wiederholung</small></span>
+        <svg class="chev"><use href="#i-arrow" /></svg>
+      </button>
+      <label class="card" id="btn-upload">
+        <span class="card-icon"><svg><use href="#i-upload" /></svg></span>
+        <span class="card-text"><strong>Video analysieren</strong><small>Aufgenommenen Satz auswerten</small></span>
+        <svg class="chev"><use href="#i-arrow" /></svg>
+        <input type="file" id="file-input" accept="video/*" hidden />
+      </label>
+    </div>
+
+    <h2 class="section-title">So filmst du richtig</h2>
+    <div class="steps">
+      <div class="step">
+        <span class="step-icon"><svg><use href="#i-phone" /></svg></span>
+        <div><b>Handy auf Hüfthöhe</b><p>2–3 m Abstand, ganzer Körper inklusive Füße im Bild.</p></div>
+      </div>
+      <div class="step">
+        <span class="step-icon"><svg><use href="#i-eye" /></svg></span>
+        <div><b>Perspektive wählen</b><p><em>Seitlich:</em> Tiefe, Oberkörper, Fersen. <em>Frontal:</em> Knie und Symmetrie.</p></div>
+      </div>
+      <div class="step">
+        <span class="step-icon"><svg><use href="#i-target" /></svg></span>
+        <div><b>Kurz stillstehen</b><p>Zu Beginn aufrecht stehen, bis „Kalibriert“ erscheint. Dann loslegen.</p></div>
+      </div>
+    </div>
+
+    <section class="panel" id="history-panel" hidden>
+      <h2 class="panel-title"><svg><use href="#i-history" /></svg>Verlauf</h2>
+      <ul id="history" class="history"></ul>
+    </section>
+
+    <details class="panel settings">
+      <summary class="panel-title"><svg><use href="#i-gear" /></svg>Einstellungen<svg class="chev"><use href="#i-arrow" /></svg></summary>
+      <label class="setting"><span>Sprach-Feedback<small>Hinweise nach jeder Wiederholung vorlesen</small></span><input type="checkbox" class="switch" id="opt-voice" checked /></label>
+      <label class="setting"><span>Start &amp; Stopp per Handzeichen<small>Hand über den Kopf heben startet und beendet den Satz</small></span><input type="checkbox" class="switch" id="opt-gesture" checked /></label>
+      <label class="setting"><span>Frontkamera<small>Selfie-Kamera statt Rückkamera</small></span><input type="checkbox" class="switch" id="opt-front" /></label>
+      <label class="setting"><span>KI-Einschätzung<small>Experimentell, noch unzuverlässig</small></span><input type="checkbox" class="switch" id="opt-ml" /></label>
+      <label class="setting"><span>Pose-Modell<small>„Genau“ braucht mehr Rechenleistung</small></span>
+        <select id="opt-model"><option value="full">Genau</option><option value="lite">Schnell</option></select>
+      </label>
+    </details>
+
+    <p class="footnote">Pose-Erkennung mit MediaPipe · läuft komplett auf dem Gerät</p>
+  </section>
+
+  <!-- Analyse (live oder Video) -->
+  <section id="screen-analyze" class="screen">
+    <div class="stage pre" id="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div class="hud top">
+        <div class="pill" id="hud-view">Ansicht: –</div>
+        <div id="hud-status" class="status">Lade Modell …</div>
+        <div class="reps"><span id="hud-reps">0</span><small>Wdh.</small></div>
+      </div>
+      <div class="depth-bar" aria-label="Tiefe">
+        <div id="depth-fill"></div>
+        <div class="depth-target"><span>parallel</span></div>
+      </div>
+      <div class="start-hint">
+        <svg class="hand"><use href="#i-hand" /></svg>
+        <b>Hand über den Kopf heben</b>
+        <p>Kurz halten, um den Satz zu starten. Danach ruhig hinstellen – seitlich oder frontal.</p>
+        <div class="gesture-bar"><div id="gesture-fill"></div></div>
+      </div>
+      <div class="hud bottom">
+        <div id="hud-feedback" class="feedback"></div>
+        <div class="stop-hint"><svg><use href="#i-hand" /></svg>Hand heben = Satz beenden</div>
+      </div>
+      <div id="loading" class="loading"><div class="spinner"></div><p id="loading-text">Lade KI-Modell …</p></div>
+    </div>
+    <div class="controls floating">
+      <button id="btn-stop" class="btn stop"><span class="stop-dot"></span>Satz beenden</button>
+    </div>
+  </section>
+
+  <!-- Ergebnis -->
+  <section id="screen-result" class="screen">
+    <header class="topbar">
+      <img src="icon.svg" alt="" class="logo" />
+      <span class="brand">Auswertung</span>
+    </header>
+
+    <section class="result-hero">
+      <div class="score-ring" id="score-ring"><span id="res-score">–</span><small>Ø Score</small></div>
+      <div class="result-text">
+        <h2 id="res-title">Auswertung</h2>
+        <p id="res-headline" class="sub"></p>
+      </div>
+    </section>
+
+    <h2 class="section-title">Deine Tipps</h2>
+    <div id="res-tips" class="tips"></div>
+
+    <section class="panel">
+      <h2 class="panel-title">Bewegungsverlauf</h2>
+      <canvas id="res-chart" height="160"></canvas>
+      <div class="legend">
+        <span><i class="lg-line"></i>Hüfttiefe</span>
+        <span><i class="lg-dash"></i>parallel</span>
+        <span><i class="lg-good"></i>sauber</span>
+        <span><i class="lg-bad"></i>mit Fehler</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">Wiederholungen</h2>
+      <div id="res-reps" class="rep-list"></div>
+    </section>
+
+    <button id="btn-export" class="link-btn"><svg><use href="#i-download" /></svg>Messdaten exportieren (für Feintuning)</button>
+
+    <div class="controls sticky">
+      <button id="btn-home" class="btn ghost">Start</button>
+      <button id="btn-again" class="btn primary"><svg><use href="#i-refresh" /></svg>Neuer Satz</button>
+    </div>
+  </section>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
