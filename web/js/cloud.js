@@ -194,7 +194,7 @@ export class Cloud {
     const uid = this.user.id;
     const pendingIds = new Set(store.get(K.pending, []).filter((p) => p.owner === uid).map((p) => p.row.client_id));
     const { data, error } = await this.sb.from("workouts")
-      .select("client_id, performed_at, mode, view, rep_count, avg_score, top_issue, reps, trace")
+      .select("client_id, performed_at, exercise, mode, view, rep_count, avg_score, top_issue, reps, trace")
       .order("performed_at", { ascending: false })
       .limit(100);
     let items;

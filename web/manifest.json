@@ -1,7 +1,7 @@
 {
-  "name": "FormCoach – Kniebeugen-Analyse",
+  "name": "FormCoach – Technik-Analyse",
   "short_name": "FormCoach",
-  "description": "Technik-Analyse für Kniebeugen mit der Handykamera (MediaPipe).",
+  "description": "Technik-Analyse für Kniebeugen, Liegestütze und Tennis mit der Handykamera (MediaPipe).",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

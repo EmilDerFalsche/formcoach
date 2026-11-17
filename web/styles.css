@@ -132,6 +132,7 @@ select { background: var(--surface-2); color: var(--text); border: 1px solid var
 .feedback small { color: rgba(255, 255, 255, .85); }
 .feedback.good { background: rgba(16, 185, 129, .82); }
 .feedback.bad { background: rgba(225, 29, 72, .82); }
+.feedback.info { background: rgba(30, 41, 59, .88); }
 
 .depth-bar { position: absolute; right: 16px; top: 120px; bottom: 200px; width: 12px; background: rgba(255, 255, 255, .14); border-radius: 999px; }
 #depth-fill { position: absolute; left: 0; right: 0; top: 0; height: 0; border-radius: 999px; background: var(--grad); transition: height .08s linear; }
@@ -219,6 +220,15 @@ select { background: var(--surface-2); color: var(--text); border: 1px solid var
 .rep-score.mid { color: var(--mid); background: rgba(251, 191, 36, .14); }
 .rep-score.bad { color: var(--bad); background: rgba(251, 113, 133, .14); }
 .metrics { list-style: none; margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; background: rgba(255, 255, 255, .03); display: grid; gap: 4px; color: var(--muted); font-size: .88rem; }
+
+/* ---------- Übungsauswahl ---------- */
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { flex: 1 1 0; min-width: 96px; padding: 12px 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); font-weight: 650; cursor: pointer; transition: background .2s, border-color .2s, transform .15s; }
+.chip:active { transform: scale(.97); }
+.chip.active { background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .55); color: var(--accent); }
+.tennis-opts { display: grid; gap: 8px; margin-top: 10px; animation: fade .25s ease; }
+.segmented.three { grid-template-columns: repeat(3, 1fr); }
+.segmented .seg { font-size: .9rem; }
 
 /* ---------- Konto ---------- */
 [hidden] { display: none !important; }

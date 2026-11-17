@@ -1,6 +1,7 @@
-# FormCoach – Technik-Analyse für Kniebeugen
+# FormCoach – Technik-Analyse mit der Handykamera
 
-Web-App (PWA), die mit der Handykamera Kniebeugen analysiert und persönliches Feedback gibt.
+Web-App (PWA), die mit der Handykamera **Kniebeugen, Liegestütze und Tennisschläge** (Aufschlag, Vorhand, Rückhand)
+analysiert und persönliches Feedback gibt.
 Die Gelenkpunkte kommen von **MediaPipe Pose Landmarker**. Alles läuft auf dem Gerät, es wird kein Video hochgeladen.
 
 ## Funktionen
@@ -10,12 +11,36 @@ Die Gelenkpunkte kommen von **MediaPipe Pose Landmarker**. Alles läuft auf dem 
 - **Erkannte Fehler:** zu wenig Tiefe, zu starke Vorlage, Hüfte kommt zuerst hoch, Knie fallen nach innen, Fersen heben ab, Asymmetrie, zu schnelles Absenken.
   Welche Prüfungen laufen, hängt von der automatisch erkannten Kameraperspektive ab (seitlich, frontal oder diagonal).
 
+### Liegestütz (seitliche Aufnahme)
+Wiederholungen über den Ellbogenwinkel; geprüft werden Tiefe (Ellbogen ≤ 90–100°), Körperlinie
+(Hüfte hängt durch / Po zu hoch, Abweichung von der Linie Schulter → Knöchel), Strecken der Arme oben,
+Kopfhaltung und Tempo. Start per Handzeichen, Pause/Ende durch Aufstehen + Handzeichen.
+
+### Tennis (Aufschlag, Vorhand, Rückhand)
+Ohne Schläger-/Balltracking – das Handgelenk der Schlaghand dient als Stellvertreter (Rechts-/Linkshänder wählbar).
+Ein Schlag wird an der Geschwindigkeitsspitze des Handgelenks erkannt und automatisch als Aufschlag / Vorhand / Rückhand
+klassifiziert; Schläge, die nicht zum gewählten Training passen, werden nicht gewertet.
+- **Aufschlag:** Kniebeugung beim Ausholen, gestreckter Arm und Höhe im Treffpunkt, Ballwurfarm, Ausschwung.
+  Referenzwerte aus einer Meta-Analyse zur Aufschlag-Kinematik ([Frontiers in Sports and Active Living, 2024](https://www.frontiersin.org/articles/10.3389/fspor.2024.1432030/full)).
+- **Vorhand / Rückhand:** Schulterdrehung beim Ausholen (nur von hinten/vorne messbar), Kniebeugung,
+  Armhaltung im Treffpunkt (einhändige vs. beidhändige Rückhand), Höhe des Ausschwungs.
+- Stopp: **beide** Hände über den Kopf (damit der Aufschlag nicht als Stopp zählt).
+
+Öffentliche Tennis-Datensätze (z. B. THETIS, Kinect-Skelette; „Tennis Player Actions“ auf Mendeley, COCO-Keypoints)
+enthalten Schlagarten, aber keine Technikfehler-Labels – daher ist auch die Tennis-Analyse regelbasiert.
+Die Schwellwerte sind Startwerte und sollten mit echten Aufnahmen (Export-Funktion) feinjustiert werden.
+
 ## Aufbau
 ```
 web/                     PWA (kein Build nötig)
   js/pose.js             MediaPipe-Setup + Skelett-Zeichnung
   js/features.js         Gelenkwinkel & Merkmale aus Landmarks
-  js/squatAnalyzer.js    Wiederholungserkennung, Kalibrierung, Regeln (Schwellwerte in THRESHOLDS)
+  js/exercises.js        Übungskatalog: Analyse, Fehlertexte, Anzeige je Übung
+  js/squatAnalyzer.js    Kniebeuge: Wiederholungen, Kalibrierung, Regeln (Schwellwerte in THRESHOLDS)
+  js/pushupAnalyzer.js   Liegestütz (Schwellwerte in PUSHUP_T)
+  js/tennisAnalyzer.js   Tennis: Schlagerkennung + Regeln (Schwellwerte in TENNIS_T)
+  js/gesture.js          Handzeichen (Start/Stopp)
+  js/cloud.js            Konten + Verlauf (Supabase) mit Offline-Sync
   js/classifier.js       ML-Modell (MLP) im Browser
   js/feedback.js         Feedback-Texte, Tipps, Sprachausgabe
   model/squat_model.json trainiertes Modell

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#070b14" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>FormCoach – Kniebeugen-Analyse</title>
+  <title>FormCoach – Technik-Analyse</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
@@ -44,14 +44,32 @@
     </header>
 
     <div class="hero">
-      <h1>Saubere Kniebeugen.<br /><span class="grad">Mit deiner Kamera.</span></h1>
-      <p class="sub">Die App analysiert deine Technik in Echtzeit und sagt dir nach jeder Wiederholung, was du verbessern kannst. Videos bleiben auf deinem Gerät.</p>
+      <h1>Bessere Technik.<br /><span class="grad">Mit deiner Kamera.</span></h1>
+      <p class="sub">FormCoach analysiert Kniebeugen, Liegestütze und Tennisschläge und sagt dir, was du verbessern kannst. Videos bleiben auf deinem Gerät.</p>
     </div>
 
-    <div class="cards">
+    <h2 class="section-title">Übung</h2>
+    <div class="chips" id="ex-chips" role="radiogroup">
+      <button class="chip active" data-ex="squat" role="radio">Kniebeuge</button>
+      <button class="chip" data-ex="pushup" role="radio">Liegestütz</button>
+      <button class="chip" data-ex="tennis" role="radio">Tennis</button>
+    </div>
+    <div class="tennis-opts" id="tennis-opts" hidden>
+      <div class="opt-group segmented three" id="stroke-seg">
+        <button class="seg active" data-stroke="serve">Aufschlag</button>
+        <button class="seg" data-stroke="forehand">Vorhand</button>
+        <button class="seg" data-stroke="backhand">Rückhand</button>
+      </div>
+      <div class="opt-group segmented" id="hand-seg">
+        <button class="seg active" data-hand="R">Rechtshänder</button>
+        <button class="seg" data-hand="L">Linkshänder</button>
+      </div>
+    </div>
+
+    <div class="cards" style="margin-top:14px">
       <button class="card primary" id="btn-live">
         <span class="card-icon"><svg><use href="#i-camera" /></svg></span>
-        <span class="card-text"><strong>Live-Training</strong><small>Feedback nach jeder Wiederholung</small></span>
+        <span class="card-text"><strong>Live-Training</strong><small>Feedback in Echtzeit, mit Sprachausgabe</small></span>
         <svg class="chev"><use href="#i-arrow" /></svg>
       </button>
       <label class="card" id="btn-upload">
@@ -63,20 +81,7 @@
     </div>
 
     <h2 class="section-title">So filmst du richtig</h2>
-    <div class="steps">
-      <div class="step">
-        <span class="step-icon"><svg><use href="#i-phone" /></svg></span>
-        <div><b>Handy auf Hüfthöhe</b><p>2–3 m Abstand, ganzer Körper inklusive Füße im Bild.</p></div>
-      </div>
-      <div class="step">
-        <span class="step-icon"><svg><use href="#i-eye" /></svg></span>
-        <div><b>Perspektive wählen</b><p><em>Seitlich:</em> Tiefe, Oberkörper, Fersen. <em>Frontal:</em> Knie und Symmetrie.</p></div>
-      </div>
-      <div class="step">
-        <span class="step-icon"><svg><use href="#i-target" /></svg></span>
-        <div><b>Kurz stillstehen</b><p>Zu Beginn aufrecht stehen, bis „Kalibriert“ erscheint. Dann loslegen.</p></div>
-      </div>
-    </div>
+    <div class="steps" id="howto-steps"><!-- wird je nach Übung befüllt --></div>
 
     <section class="panel" id="history-panel" hidden>
       <h2 class="panel-title"><svg><use href="#i-history" /></svg>Verlauf<span class="sync-badge" id="history-source"></span></h2>
@@ -174,21 +179,21 @@
       <div class="hud top">
         <div class="pill" id="hud-view">Ansicht: –</div>
         <div id="hud-status" class="status">Lade Modell …</div>
-        <div class="reps"><span id="hud-reps">0</span><small>Wdh.</small></div>
+        <div class="reps"><span id="hud-reps">0</span><small id="hud-unit">Wdh.</small></div>
       </div>
       <div class="depth-bar" aria-label="Tiefe">
         <div id="depth-fill"></div>
-        <div class="depth-target"><span>parallel</span></div>
+        <div class="depth-target" id="meter-target"><span id="meter-label">parallel</span></div>
       </div>
       <div class="start-hint">
         <svg class="hand"><use href="#i-hand" /></svg>
         <b>Hand über den Kopf heben</b>
-        <p>Kurz halten, um den Satz zu starten. Danach ruhig hinstellen – seitlich oder frontal.</p>
+        <p id="start-hint-text">Kurz halten, um den Satz zu starten. Danach ruhig hinstellen – seitlich oder frontal.</p>
         <div class="gesture-bar"><div id="gesture-fill"></div></div>
       </div>
       <div class="hud bottom">
         <div id="hud-feedback" class="feedback"></div>
-        <div class="stop-hint"><svg><use href="#i-hand" /></svg>Hand heben = Satz beenden</div>
+        <div class="stop-hint"><svg><use href="#i-hand" /></svg><span id="stop-hint-text">Hand heben = Satz beenden</span></div>
       </div>
       <div id="loading" class="loading"><div class="spinner"></div><p id="loading-text">Lade KI-Modell …</p></div>
     </div>
@@ -220,8 +225,8 @@
       <h2 class="panel-title">Bewegungsverlauf</h2>
       <canvas id="res-chart" height="160"></canvas>
       <div class="legend">
-        <span><i class="lg-line"></i>Hüfttiefe</span>
-        <span><i class="lg-dash"></i>parallel</span>
+        <span><i class="lg-line"></i><span id="lg-line-label">Hüfttiefe</span></span>
+        <span><i class="lg-dash"></i><span id="lg-ref-label">parallel</span></span>
         <span><i class="lg-good"></i>sauber</span>
         <span><i class="lg-bad"></i>mit Fehler</span>
       </div>

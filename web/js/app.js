@@ -1,8 +1,11 @@
-import { initPose, detect, drawPose, ISSUE_JOINTS } from "./pose.js";
-import { SquatAnalyzer, THRESHOLDS } from "./squatAnalyzer.js";
+import { initPose, detect, drawPose } from "./pose.js";
+import { THRESHOLDS } from "./squatAnalyzer.js";
+import { PUSHUP_T } from "./pushupAnalyzer.js";
+import { TENNIS_T } from "./tennisAnalyzer.js";
 import { SquatClassifier } from "./classifier.js";
-import { ISSUES, ML_LABEL_TEXT, Voice, repCue, summarize } from "./feedback.js";
+import { ML_LABEL_TEXT, Voice, repCue, summarize } from "./feedback.js";
 import { Cloud, uuid } from "./cloud.js";
+import { EXERCISES, exerciseOf } from "./exercises.js";
 
 const cloud = new Cloud();
 
@@ -20,6 +23,28 @@ let wakeLock = null;
 let highlight = { joints: [], until: 0, good: false };
 let lastStatus = "";
 let lastExport = null;
+let activeEx = EXERCISES.squat;   // Übung des laufenden / angezeigten Satzes
+
+// ---------- Übungsauswahl ----------
+const sel = { exercise: "squat", stroke: "serve", hand: "R" };
+const selectedEx = () => exerciseOf(sel.exercise === "tennis" ? `tennis_${sel.stroke}` : sel.exercise);
+
+function renderPicker() {
+  document.querySelectorAll("#ex-chips .chip").forEach((c) => {
+    const on = c.dataset.ex === sel.exercise;
+    c.classList.toggle("active", on);
+    c.setAttribute("aria-checked", on);
+  });
+  $("tennis-opts").hidden = sel.exercise !== "tennis";
+  document.querySelectorAll("#stroke-seg .seg").forEach((b) => b.classList.toggle("active", b.dataset.stroke === sel.stroke));
+  document.querySelectorAll("#hand-seg .seg").forEach((b) => b.classList.toggle("active", b.dataset.hand === sel.hand));
+  const ex = selectedEx();
+  $("howto-steps").innerHTML = ex.howto.map(([icon, title, text]) =>
+    `<div class="step"><span class="step-icon"><svg><use href="#${icon}" /></svg></span><div><b>${title}</b><p>${text}</p></div></div>`).join("");
+}
+document.querySelectorAll("#ex-chips .chip").forEach((c) => c.addEventListener("click", () => { sel.exercise = c.dataset.ex; renderPicker(); saveSettings(); }));
+document.querySelectorAll("#stroke-seg .seg").forEach((b) => b.addEventListener("click", () => { sel.stroke = b.dataset.stroke; renderPicker(); saveSettings(); }));
+document.querySelectorAll("#hand-seg .seg").forEach((b) => b.addEventListener("click", () => { sel.hand = b.dataset.hand; renderPicker(); saveSettings(); }));
 
 // ---------- Navigation ----------
 function show(id) {
@@ -37,6 +62,9 @@ function loadSettings() {
     if ("gesture" in s) $("opt-gesture").checked = s.gesture;
     if ("ml2" in s) $("opt-ml").checked = s.ml2; // alter Schlüssel "ml" bewusst ignoriert (jetzt standardmäßig aus)
     if (s.model) $("opt-model").value = s.model;
+    if (["squat", "pushup", "tennis"].includes(s.exercise)) sel.exercise = s.exercise;
+    if (["serve", "forehand", "backhand"].includes(s.stroke)) sel.stroke = s.stroke;
+    if (s.hand === "L" || s.hand === "R") sel.hand = s.hand;
   } catch {}
 }
 function saveSettings() {
@@ -44,6 +72,7 @@ function saveSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
       voice: $("opt-voice").checked, front: $("opt-front").checked,
       gesture: $("opt-gesture").checked, ml2: $("opt-ml").checked, model: $("opt-model").value,
+      exercise: sel.exercise, stroke: sel.stroke, hand: sel.hand,
     }));
   } catch {}
 }
@@ -55,10 +84,12 @@ async function prepare() {
   $("loading-text").textContent = "Lade KI-Modell …";
   voice.enabled = $("opt-voice").checked;
   await initPose($("opt-model").value);
-  if (classifier === undefined) classifier = await SquatClassifier.load();
+  activeEx = selectedEx();
+  if (activeEx.usesClassifier && classifier === undefined) classifier = await SquatClassifier.load();
   const gestures = mode === "live" && $("opt-gesture").checked;
-  analyzer = new SquatAnalyzer({
-    classifier: $("opt-ml").checked ? classifier : null,
+  analyzer = activeEx.create({
+    classifier: activeEx.usesClassifier && $("opt-ml").checked ? classifier : null,
+    hand: sel.hand,
     onRep,
     onEvent,
     onFinish: () => setTimeout(finish, 0),
@@ -66,6 +97,12 @@ async function prepare() {
     stopGesture: gestures,
   });
   $("stage").classList.toggle("gestures", gestures);
+  // Anzeigen an die Übung anpassen
+  $("hud-unit").textContent = activeEx.unit.short;
+  $("meter-label").textContent = activeEx.meter.label;
+  $("meter-target").style.top = `${100 / activeEx.meter.max}%`;
+  $("start-hint-text").textContent = activeEx.startHint;
+  $("stop-hint-text").textContent = activeEx.stopHint;
   $("stage").classList.add("pre");
   $("depth-fill").style.height = "0%";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -101,8 +138,8 @@ async function startLive() {
     $("loading").hidden = true;
     running = true;
     voice.say(analyzer.requireStartGesture
-      ? "Stell dich hin und heb eine Hand über den Kopf, um zu starten."
-      : "Stell dich seitlich oder frontal hin, ganzer Körper im Bild.", { force: true });
+      ? activeEx.voice.intro
+      : "Ganzer Körper ins Bild, dann geht's los.", { force: true });
     requestAnimationFrame(liveLoop);
   } catch (e) {
     console.error(e);
@@ -165,38 +202,44 @@ function processFrame(t) {
     $("hud-status").dataset.state = res.status;
     lastStatus = res.status;
   }
-  const d = res.depth ?? 0;
-  $("depth-fill").style.height = `${Math.max(0, Math.min(1.2, d)) / 1.2 * 100}%`;
+  const d = res.depth ?? 0, max = activeEx.meter.max;
+  $("depth-fill").style.height = `${Math.max(0, Math.min(max, d)) / max * 100}%`;
 }
 
 function onEvent(type, info) {
   if (type === "start") {
-    voice.say("Satz startet. Stell dich ruhig hin.", { force: true });
+    voice.say(activeEx.voice.afterStart, { force: true });
     if (navigator.vibrate) navigator.vibrate(80);
   } else if (type === "calibrated") {
-    voice.say(analyzer.stopGesture ? "Los geht's! Zum Beenden Hand heben." : "Kalibriert. Los geht's!", { force: true });
+    voice.say(analyzer.stopGesture ? activeEx.voice.ready : "Los geht's!", { force: true });
   } else if (type === "recalibrate") {
     voice.say(`${info}. Kurz ruhig stehen.`, { force: true });
   } else if (type === "discarded") {
-    console.info("Bewegung nicht als Wiederholung gezählt:", info);
+    console.info("Bewegung nicht gewertet:", info);
+    if (activeEx.tennis) {
+      const fb = $("hud-feedback");
+      fb.className = "feedback info show";
+      fb.innerHTML = `<b>${info}</b><small>wird beim ${activeEx.name.split("· ")[1]}-Training nicht gewertet</small>`;
+    }
   }
 }
 
 function onRep(rep) {
+  const ex = activeEx;
   $("hud-reps").textContent = rep.index;
   const fb = $("hud-feedback");
   if (rep.issues.length) {
     fb.className = "feedback bad show";
-    fb.innerHTML = `<b>${ISSUES[rep.issues[0].key].cue}</b>` +
-      (rep.issues.length > 1 ? `<small>+ ${rep.issues.slice(1).map((i) => ISSUES[i.key].title).join(", ")}</small>` : "");
-    highlight = { joints: rep.issues.flatMap((i) => ISSUE_JOINTS[i.key]), until: performance.now() + 1800, good: false };
+    fb.innerHTML = `<b>${ex.issues[rep.issues[0].key].cue}</b>` +
+      (rep.issues.length > 1 ? `<small>+ ${rep.issues.slice(1).map((i) => ex.issues[i.key].title).join(", ")}</small>` : "");
+    highlight = { joints: rep.issues.flatMap((i) => ex.joints[i.key] ?? []), until: performance.now() + 1800, good: false };
   } else {
     fb.className = "feedback good show";
-    fb.innerHTML = "<b>Saubere Wiederholung ✓</b>";
+    fb.innerHTML = `<b>${ex.tennis ? "Guter Schlag ✓" : "Saubere Wiederholung ✓"}</b>`;
     highlight = { joints: [], until: performance.now() + 1200, good: true };
   }
   if (navigator.vibrate) navigator.vibrate(rep.issues.length ? [60, 60, 60] : 40);
-  voice.say(repCue(rep), { force: true });
+  voice.say(repCue(rep, ex.issues, ex.praise), { force: true });
 }
 
 // ---------- Abschluss ----------
@@ -210,42 +253,45 @@ function stopMedia() {
 
 function finish() {
   if (!analyzer || !running) { stopMedia(); show("screen-home"); return; }
+  const ex = activeEx;
   const reps = analyzer.reps;
   const trace = analyzer.trace;
   const view = analyzer.view;
   stopMedia();
-  const sum = summarize(reps);
+  const sum = summarize(reps, ex.issues, ex.unit);
+  const thresholds = ex.id === "squat" ? THRESHOLDS : ex.id === "pushup" ? PUSHUP_T : TENNIS_T;
   lastExport = {
-    app: "FormCoach", version: 2, date: new Date().toISOString(), mode, view,
-    baseline: analyzer.base, thresholds: THRESHOLDS, discarded: analyzer.discarded,
+    app: "FormCoach", version: 3, exercise: ex.id, hand: ex.tennis ? sel.hand : undefined,
+    date: new Date().toISOString(), mode, view,
+    baseline: analyzer.base, thresholds, discarded: analyzer.discarded,
     reps: reps.map(({ ml, ...r }) => ({ ...r, ml: ml ? { label: ml.label, confidence: ml.confidence } : null })),
     trace: trace.map((p) => ({ t: Math.round(p.t), d: Math.round(p.d * 1000) / 1000 })),
   };
-  renderResult(reps, sum, trace, view);
+  renderResult(reps, sum, trace, view, ex);
   $("btn-export").hidden = false;
   $("res-saved").hidden = true;
-  if (reps.length) saveWorkout(buildWorkout(reps, sum, trace, view));
+  if (reps.length) saveWorkout(buildWorkout(reps, sum, trace, view, ex));
   if ($("opt-voice").checked && reps.length) {
     voice.enabled = true;
-    voice.say(`${reps.length} Wiederholungen. Durchschnitt ${sum.avgScore} Punkte. ${sum.ranked[0] ? "Fokus: " + sum.ranked[0].title : "Sehr sauber!"}`, { force: true });
+    voice.say(`${reps.length} ${reps.length === 1 ? ex.unit.one : ex.unit.many}. Durchschnitt ${sum.avgScore} Punkte. ${sum.ranked[0] ? "Fokus: " + sum.ranked[0].title : "Sehr sauber!"}`, { force: true });
   }
   show("screen-result");
 }
 
 const scoreClass = (s) => (s >= 85 ? "good" : s >= 60 ? "mid" : "bad");
 
-function renderResult(reps, sum, trace, view) {
+function renderResult(reps, sum, trace, view, ex = activeEx) {
+  activeEx = ex;
   $("res-score").textContent = reps.length ? sum.avgScore : "–";
   $("score-ring").style.setProperty("--p", reps.length ? sum.avgScore : 0);
   $("score-ring").className = `score-ring ${reps.length ? scoreClass(sum.avgScore) : ""}`;
-  $("res-title").textContent = `${reps.length} Wiederholung${reps.length === 1 ? "" : "en"} · ${VIEW_TEXT[view]}`;
+  const viewText = ex.tennis || ex.id === "pushup" ? "" : ` · ${VIEW_TEXT[view] ?? ""}`;
+  $("res-title").textContent = `${ex.name} · ${reps.length} ${reps.length === 1 ? ex.unit.one : ex.unit.many}${viewText}`;
   $("res-headline").textContent = sum.headline;
 
   const tips = $("res-tips");
   tips.innerHTML = "";
-  if (!sum.ranked.length) {
-    tips.innerHTML = `<p class="ok">Keine Fehler erkannt. ${view === "side" ? "Filme den nächsten Satz frontal, um auch Knie-Stellung und Symmetrie zu prüfen." : view === "front" ? "Filme den nächsten Satz seitlich, um Tiefe und Oberkörperhaltung genauer zu prüfen." : ""}</p>`;
-  }
+  if (!sum.ranked.length) tips.innerHTML = `<p class="ok">Keine Fehler erkannt – stark!</p>`;
   sum.ranked.forEach((r, i) => {
     const el = document.createElement("div");
     el.className = "tip";
@@ -253,34 +299,30 @@ function renderResult(reps, sum, trace, view) {
       <p>${r.detail}</p><p class="how"><b>So geht's:</b> ${r.tip}</p>`;
     tips.appendChild(el);
   });
-  if (view === "side") tips.insertAdjacentHTML("beforeend", `<p class="hint">Seitliche Aufnahme: Knie-nach-innen und Asymmetrie wurden nicht geprüft.</p>`);
-  if (view === "front") tips.insertAdjacentHTML("beforeend", `<p class="hint">Frontale Aufnahme: Oberkörper-Vorlage wurde nicht geprüft.</p>`);
+  const note = ex.viewNote(view);
+  if (note) tips.insertAdjacentHTML("beforeend", `<p class="hint">${note}</p>`);
 
   const list = $("res-reps");
   list.innerHTML = "";
+  const label = ex.tennis ? "Schlag" : "Wdh.";
   reps.forEach((r) => {
-    const m = r.metrics;
     const el = document.createElement("details");
     el.className = "rep";
     const cls = scoreClass(r.score);
-    const issueText = r.issues.length ? r.issues.map((i) => `${ISSUES[i.key].title}${i.severity === "major" ? " (deutlich)" : ""}`).join(", ") : "Keine Fehler";
+    const issueText = r.issues.length ? r.issues.map((i) => `${ex.issues[i.key]?.title ?? i.key}${i.severity === "major" ? " (deutlich)" : ""}`).join(", ") : "Keine Fehler";
     const ml = r.ml ? `<li>KI-Einschätzung: <b>${ML_LABEL_TEXT[r.ml.label]}</b> (${Math.round(r.ml.confidence * 100)} %)</li>` : "";
-    el.innerHTML = `<summary><span class="rep-score ${cls}">${r.score}</span><span>Wdh. ${r.index}</span><small>${issueText}</small></summary>
-      <ul class="metrics">
-        <li>Tiefe: ${m.depth >= 0 ? "unter parallel ✓" : `${Math.round(-m.depth * 100)} % über parallel`}</li>
-        <li>Min. Kniewinkel: ${Math.round(m.kneeMin)}°</li>
-        ${view !== "front" ? `<li>Oberkörper-Vorlage: ${Math.round(m.trunk)}°</li>` : ""}
-        ${view !== "side" && Number.isFinite(m.kneeRatio) ? `<li>Knie-/Fußbreite: ${Math.round(m.kneeRatio * 100)} % des Stands</li>` : ""}
-        <li>Absenken: ${m.descentSec.toFixed(1)} s · gesamt ${m.durationSec.toFixed(1)} s</li>
-        ${ml}
-      </ul>`;
+    const lines = ex.metricLines(r, view).filter(Boolean).map((l) => `<li>${l}</li>`).join("");
+    el.innerHTML = `<summary><span class="rep-score ${cls}">${r.score}</span><span>${label} ${r.index}</span><small>${issueText}</small></summary>
+      <ul class="metrics">${lines}${ml}</ul>`;
     list.appendChild(el);
   });
+  $("lg-line-label").textContent = ex.chart.line;
+  $("lg-ref-label").textContent = ex.chart.refLabel;
   $("chart-panel").hidden = trace.length < 2;
-  drawChart(trace, reps);
+  drawChart(trace, reps, ex.chart);
 }
 
-function drawChart(trace, reps) {
+function drawChart(trace, reps, cfg = activeEx.chart) {
   const c = $("res-chart");
   const w = (c.width = c.clientWidth * devicePixelRatio || 600);
   const h = (c.height = 160 * devicePixelRatio);
@@ -288,10 +330,10 @@ function drawChart(trace, reps) {
   g.clearRect(0, 0, w, h);
   if (trace.length < 2) return;
   const t0 = trace[0].t, t1 = trace[trace.length - 1].t;
-  const maxD = 1.3;
+  const maxD = cfg.max;
   const X = (t) => ((t - t0) / (t1 - t0 || 1)) * w;
   const Y = (d) => h - 8 * devicePixelRatio - (Math.max(-0.1, Math.min(maxD, d)) / maxD) * (h - 16 * devicePixelRatio);
-  // Rep-Bereiche einfärben
+  // Wiederholungs-/Schlag-Bereiche einfärben
   reps.forEach((r) => {
     g.fillStyle = r.issues.length ? "rgba(251,113,133,0.24)" : "rgba(52,211,153,0.24)";
     const x0 = X(r.start), x1 = X(r.end), rad = 6 * devicePixelRatio;
@@ -300,7 +342,7 @@ function drawChart(trace, reps) {
     g.fill();
   });
   g.setLineDash([6 * devicePixelRatio, 6 * devicePixelRatio]); g.strokeStyle = "rgba(148,163,184,0.6)"; g.lineWidth = devicePixelRatio;
-  g.beginPath(); g.moveTo(0, Y(1)); g.lineTo(w, Y(1)); g.stroke(); g.setLineDash([]);
+  g.beginPath(); g.moveTo(0, Y(cfg.ref)); g.lineTo(w, Y(cfg.ref)); g.stroke(); g.setLineDash([]);
   const grad = g.createLinearGradient(0, 0, w, 0);
   grad.addColorStop(0, "#22d3ee"); grad.addColorStop(1, "#818cf8");
   g.strokeStyle = grad; g.lineWidth = 2.5 * devicePixelRatio; g.lineJoin = "round";
@@ -314,12 +356,12 @@ const r2 = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 
 const roundObj = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k, r2(v)]));
 
 /** Kompakte Darstellung eines Satzes für Verlauf / Datenbank (ohne Rohdaten pro Frame). */
-function buildWorkout(reps, sum, trace, view) {
+function buildWorkout(reps, sum, trace, view, ex = activeEx) {
   const step = Math.max(1, Math.ceil(trace.length / 300));
   return {
     client_id: uuid(),
     performed_at: new Date().toISOString(),
-    exercise: "squat",
+    exercise: ex.id,
     mode, view,
     rep_count: reps.length,
     avg_score: sum.avgScore,
@@ -378,10 +420,11 @@ async function renderHistory() {
   ul.innerHTML = "";
   items.slice(0, 15).forEach((e) => {
     const li = document.createElement("li");
-    const focus = ISSUES[e.top_issue]?.title ?? e.top_issue_title;
+    const ex = exerciseOf(e.exercise);
+    const focus = ex.issues[e.top_issue]?.title ?? e.top_issue_title;
     const hasDetail = Array.isArray(e.reps) && e.reps.length > 0;
     li.className = hasDetail ? "" : "no-detail";
-    li.innerHTML = `<span class="h-score ${scoreClass(e.avg_score ?? 0)}">${e.avg_score ?? "–"}</span><span><b>${e.rep_count} Wdh.</b> · ${e.mode === "video" ? "Video" : "Live"} · ${VIEW_TEXT[e.view] ?? ""}${e.pending ? '<i class="pending-dot" title="Noch nicht hochgeladen"></i>' : ""}<small>${fmtDate(e.performed_at)}${focus ? " · Fokus: " + focus : ""}</small></span>`;
+    li.innerHTML = `<span class="h-score ${scoreClass(e.avg_score ?? 0)}">${e.avg_score ?? "–"}</span><span><b>${ex.name}</b> · ${e.rep_count} ${ex.unit.short} · ${e.mode === "video" ? "Video" : "Live"}${e.pending ? '<i class="pending-dot" title="Noch nicht hochgeladen"></i>' : ""}<small>${fmtDate(e.performed_at)}${focus ? " · Fokus: " + focus : ""}</small></span>`;
     if (hasDetail) li.addEventListener("click", () => openWorkout(e));
     ul.appendChild(li);
   });
@@ -390,8 +433,9 @@ async function renderHistory() {
 /** Gespeicherten Satz in der Ergebnisansicht öffnen. */
 function openWorkout(w) {
   const reps = w.reps.map((r) => ({ ...r, issues: r.issues ?? [], metrics: r.metrics ?? {} }));
-  renderResult(reps, summarize(reps), w.trace ?? [], w.view);
-  $("res-title").textContent = `${fmtDate(w.performed_at)} · ${w.rep_count} Wdh.`;
+  const ex = exerciseOf(w.exercise);
+  renderResult(reps, summarize(reps, ex.issues, ex.unit), w.trace ?? [], w.view, ex);
+  $("res-title").textContent = `${ex.name} · ${fmtDate(w.performed_at)} · ${w.rep_count} ${ex.unit.short}`;
   $("btn-export").hidden = true;
   $("res-saved").hidden = true;
   mode = w.mode;
@@ -419,7 +463,7 @@ function updateAccountButton() {
 
 function setAuthMode(m) {
   authMode = m;
-  document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.mode === m));
+  document.querySelectorAll("#acc-auth .seg").forEach((b) => b.classList.toggle("active", b.dataset.mode === m));
   $("acc-password2-row").hidden = m !== "register";
   $("acc-forgot").hidden = m !== "login";
   $("acc-submit").textContent = m === "login" ? "Anmelden" : "Konto erstellen";
@@ -489,7 +533,7 @@ async function withBusy(btn, fn) {
 
 $("btn-account").addEventListener("click", openAccount);
 $("acc-back").addEventListener("click", () => show("screen-home"));
-document.querySelectorAll(".seg").forEach((b) => b.addEventListener("click", () => setAuthMode(b.dataset.mode)));
+document.querySelectorAll("#acc-auth .seg").forEach((b) => b.addEventListener("click", () => setAuthMode(b.dataset.mode)));
 
 $("acc-form").addEventListener("submit", (ev) => {
   ev.preventDefault();
@@ -601,12 +645,13 @@ $("btn-again").addEventListener("click", () => (mode === "video" ? $("file-input
 $("btn-home").addEventListener("click", () => show("screen-home"));
 
 loadSettings();
+renderPicker();
 updateAccountButton();
 renderHistory();
 cloud.init();
 // Debug-Hook für Tests ohne Kamera: index.html?debug
 if (new URLSearchParams(location.search).has("debug")) {
-  window.__formcoach = { renderResult, summarize, show, cloud, buildWorkout, saveWorkout, renderHistory, openAccount };
+  window.__formcoach = { renderResult, summarize, show, cloud, buildWorkout, saveWorkout, renderHistory, openAccount, exerciseOf };
 }
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});

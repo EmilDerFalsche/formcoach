@@ -19,13 +19,18 @@
     const maxErr = Math.max(...ref.map(r => Math.max(...clf.predict(r.x).map((p, i) => Math.abs(p - r.p[i])))));
     html += `\n<span class="${maxErr < 1e-6 ? "ok" : "fail"}">${maxErr < 1e-6 ? "✓" : "✗"} Klassifikator JS == Python (max. Abweichung ${maxErr.toExponential(2)})</span>`;
   } catch (e) { html += `\n(Keine classifier_reference.json – Klassifikator-Abgleich übersprungen)`; }
+  // Liegestütz & Tennis
+  const { runExerciseTests } = await import("./exercises.test.js");
+  const eres = runExerciseTests();
+  html += "\n\n<b>Liegestütz & Tennis</b>\n" + eres.map(r => `<span class="${r.ok ? "ok" : "fail"}">${r.ok ? "✓" : "✗"} ${r.name}</span> – ${r.reps} gewertet, [${r.found.join(", ")}]` +
+    (r.ok || !r.metrics ? "" : `\n   Metriken: ${JSON.stringify(r.metrics, (k, v) => typeof v === "number" ? +v.toFixed(3) : v)}`)).join("\n");
   // Konto & Synchronisierung (simulierter Supabase-Server)
   const { runCloudTests } = await import("./cloud.test.js");
   const cres = await runCloudTests();
   html += "\n\n<b>Konto & Synchronisierung</b>\n" + cres.map(r => `<span class="${r.ok ? "ok" : "fail"}">${r.ok ? "✓" : "✗"} ${r.name}</span>${r.info && !r.ok ? " – " + r.info : ""}`).join("\n");
-  const pass = res.every(r => r.ok) && cres.every(r => r.ok);
+  const pass = res.every(r => r.ok) && cres.every(r => r.ok) && eres.every(r => r.ok);
   out.innerHTML = html;
-  window.__testResult = { pass, res, cres };
+  window.__testResult = { pass, res, cres, eres };
 </script>
 </body>
 </html>

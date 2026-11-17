@@ -75,25 +75,29 @@ export class Voice {
   }
 }
 
-/** Kurzer Sprach-Cue nach einer Wiederholung. */
-export function repCue(rep) {
+/** Kurzer Sprach-Cue nach einer Wiederholung / einem Schlag. */
+export function repCue(rep, issues = ISSUES, praise = PRAISE) {
   const main = rep.issues[0];
-  if (!main) return `${rep.index}. ${PRAISE[rep.index % PRAISE.length]}`;
-  return `${rep.index}. ${ISSUES[main.key].cue}`;
+  if (!main) return `${rep.index}. ${praise[rep.index % praise.length]}`;
+  return `${rep.index}. ${issues[main.key]?.cue ?? ""}`;
 }
 
-/** Fasst einen Satz zusammen: häufigste Fehler + priorisierte Tipps. */
-export function summarize(reps) {
+/**
+ * Fasst einen Satz zusammen: häufigste Fehler + priorisierte Tipps.
+ * @param {object} issues  Fehlerkatalog der Übung
+ * @param {{one:string, many:string}} unit  z. B. Wiederholung/Wiederholungen oder Schlag/Schlägen
+ */
+export function summarize(reps, issues = ISSUES, unit = { one: "Wiederholung", many: "Wiederholungen", none: "Keine Wiederholung erkannt" }) {
   const counts = {};
   reps.forEach((r) => r.issues.forEach((i) => (counts[i.key] = (counts[i.key] || 0) + (i.severity === "major" ? 1 : 0.6))));
-  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({
-    key: k, ...ISSUES[k],
+  const ranked = Object.entries(counts).filter(([k]) => issues[k]).sort((a, b) => b[1] - a[1]).map(([k]) => ({
+    key: k, ...issues[k],
     reps: reps.filter((r) => r.issues.some((i) => i.key === k)).length,
   }));
   const avg = reps.length ? Math.round(reps.reduce((s, r) => s + r.score, 0) / reps.length) : 0;
   let headline;
-  if (!reps.length) headline = "Keine Wiederholung erkannt. Achte darauf, dass dein ganzer Körper im Bild ist.";
-  else if (!ranked.length) headline = "Starke Technik! In keiner Wiederholung wurde ein Fehler erkannt.";
-  else headline = `Dein wichtigster Ansatzpunkt: ${ranked[0].title} (in ${ranked[0].reps} von ${reps.length} Wiederholungen).`;
+  if (!reps.length) headline = `${unit.none}. Achte darauf, dass dein ganzer Körper im Bild ist.`;
+  else if (!ranked.length) headline = `Starke Technik! In keiner ${unit.dat ?? unit.one} wurde ein Fehler erkannt.`;
+  else headline = `Dein wichtigster Ansatzpunkt: ${ranked[0].title} (in ${ranked[0].reps} von ${reps.length} ${unit.datMany ?? unit.many}).`;
   return { avgScore: avg, ranked, headline };
 }
