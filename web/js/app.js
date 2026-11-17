@@ -66,6 +66,7 @@ function loadSettings() {
     if (["serve", "forehand", "backhand"].includes(s.stroke)) sel.stroke = s.stroke;
     if (s.hand === "L" || s.hand === "R") sel.hand = s.hand;
     if (s.slowmo) $("opt-slowmo").value = s.slowmo;
+    if (s.speed) $("opt-speed").value = s.speed;
     if ("objects" in s) $("opt-objects").checked = s.objects;
   } catch {}
 }
@@ -75,11 +76,11 @@ function saveSettings() {
       voice: $("opt-voice").checked, front: $("opt-front").checked,
       gesture: $("opt-gesture").checked, ml2: $("opt-ml").checked, model: $("opt-model").value,
       exercise: sel.exercise, stroke: sel.stroke, hand: sel.hand,
-      slowmo: $("opt-slowmo").value, objects: $("opt-objects").checked,
+      slowmo: $("opt-slowmo").value, objects: $("opt-objects").checked, speed: $("opt-speed").value,
     }));
   } catch {}
 }
-["opt-voice", "opt-front", "opt-gesture", "opt-ml", "opt-model", "opt-slowmo", "opt-objects"].forEach((id) => $(id).addEventListener("change", saveSettings));
+["opt-voice", "opt-front", "opt-gesture", "opt-ml", "opt-model", "opt-slowmo", "opt-objects", "opt-speed"].forEach((id) => $(id).addEventListener("change", saveSettings));
 
 // ---------- Setup ----------
 async function prepare() {
@@ -159,6 +160,116 @@ function liveLoop() {
 }
 
 // ---------- Video-Upload ----------
+// ---------- Video-Analyse: Tempo-Stufen ----------
+// fineFps: Bilder pro Sekunde (echte Zeit) rund um einen Schlag
+// objPre/objPost: Zeitfenster um die Schlagspitze, in dem Schläger & Ball gesucht werden (Sekunden)
+const VIDEO_PRESETS = {
+  fast:     { fineFps: 30,  objPre: 0.5, objPost: 0.3, linearFps: 15 },
+  balanced: { fineFps: 60,  objPre: 0.8, objPost: 0.5, linearFps: 30 },
+  precise:  { fineFps: 120, objPre: 1.6, objPost: 1.0, linearFps: 30 },
+};
+const SCAN_FPS = 10;          // Suchlauf: so viele Bilder pro Sekunde (echte Zeit)
+const SCAN_TRIGGER = 3.5;     // Handgelenk-Tempo (Rumpflängen/s) im Suchlauf, ab dem ein Schlag vermutet wird
+const WIN_BEFORE = 2.6;       // Sekunden vor der Schlagspitze (für Ausholen + Schulterdrehung)
+const WIN_AFTER = 1.2;        // Sekunden danach (Ausschwung)
+
+const yieldUI = () => new Promise((r) => setTimeout(r));
+const fmtSec = (sec) => (sec >= 90 ? `${Math.round(sec / 60)} min` : `${Math.max(1, Math.round(sec))} s`);
+
+function setVideoStatus(text) {
+  $("hud-status").textContent = text;
+  $("hud-status").dataset.state = "down";
+  lastStatus = "video";
+}
+
+/** Kniebeuge/Liegestütz: gleichmäßig durch das ganze Video. */
+async function analyzeVideoLinear(total, preset) {
+  const step = 1 / preset.linearFps;
+  let n = 0;
+  const t0 = performance.now();
+  for (let tv = 0; tv <= total && running && mode === "video"; tv += step, n++) {
+    await seekTo(tv);
+    processFrame(tv * 1000);
+    const done = tv / total, el = (performance.now() - t0) / 1000;
+    setVideoStatus(`Analyse ${Math.round(done * 100)} %${done > 0.05 ? ` · noch ca. ${fmtSec((el / done) * (1 - done))}` : ""}`);
+    if (n % 4 === 0) await yieldUI();
+  }
+}
+
+/**
+ * Tennis: zweistufig.
+ *  1. Suchlauf mit wenigen Bildern/s, nur Pose → Zeitpunkte der Schläge finden
+ *  2. Feinanalyse nur rund um jeden Schlag (Pausen dazwischen werden übersprungen),
+ *     Schläger & Ball nur im engen Fenster um den Treffpunkt
+ */
+async function analyzeTennisVideo(total, slow, useObjects, preset) {
+  const totalReal = total / slow;
+  const aspect = video.videoWidth / video.videoHeight;
+
+  // ---- 1. Suchlauf ----
+  const samples = [];
+  let prev = null, n = 0;
+  const tScan = performance.now();
+  for (let tr = 0; tr <= totalReal && running && mode === "video"; tr += 1 / SCAN_FPS, n++) {
+    await seekTo(tr * slow);
+    const lm = detect(video);
+    drawPose(ctx, lm, {});
+    if (lm) {
+      const P = (i) => ({ x: lm[i].x * aspect, y: lm[i].y });
+      const sh = { x: (P(11).x + P(12).x) / 2, y: (P(11).y + P(12).y) / 2 }, hp = { x: (P(23).x + P(24).x) / 2, y: (P(23).y + P(24).y) / 2 };
+      const torso = Math.hypot(sh.x - hp.x, sh.y - hp.y) || 1e-3;
+      const cur = { tr, l: P(15), r: P(16) };
+      if (prev) {
+        const dt = tr - prev.tr;
+        const v = Math.max(Math.hypot(cur.l.x - prev.l.x, cur.l.y - prev.l.y), Math.hypot(cur.r.x - prev.r.x, cur.r.y - prev.r.y)) / torso / dt;
+        samples.push({ t: tr, v });
+      }
+      prev = cur;
+    } else prev = null;
+    setVideoStatus(`Suche Schläge … ${Math.round((tr / totalReal) * 100)} %`);
+    if (n % 4 === 0) await yieldUI();
+  }
+  const msPerPose = (performance.now() - tScan) / Math.max(1, n);
+
+  // Schlagspitzen: lokale Maxima über der Schwelle, mind. 1,2 s Abstand
+  const peaks = [];
+  for (const s of samples) {
+    if (s.v < SCAN_TRIGGER) continue;
+    const last = peaks.at(-1);
+    if (last && s.t - last.t < 1.2) { if (s.v > last.v) Object.assign(last, s); }
+    else peaks.push({ ...s });
+  }
+  if (!peaks.length || !running) return;
+
+  // Zeitfenster zusammenführen
+  const windows = [];
+  for (const pk of peaks) {
+    const a = Math.max(0, pk.t - WIN_BEFORE), b = Math.min(totalReal, pk.t + WIN_AFTER);
+    const last = windows.at(-1);
+    if (last && a <= last.b) last.b = b; else windows.push({ a, b });
+  }
+  const objFor = (tr) => useObjects && peaks.some((pk) => tr >= pk.t - preset.objPre && tr <= pk.t + preset.objPost);
+
+  // Feinanalyse: höchstens so viele Bilder, wie das Video hergibt (Annahme: Datei mit 30 Bildern/s)
+  const fineStep = Math.max(1 / preset.fineFps, 1 / (30 * slow));
+  // Volle Bildrate nur in der letzten Sekunde vor dem Treffpunkt + Ausschwung; davor (Ausholen) reichen 15 Bilder/s
+  const stepFor = (tr) => (peaks.some((pk) => tr >= pk.t - 1.0 && tr <= pk.t + WIN_AFTER) ? fineStep : Math.max(fineStep, 1 / 15));
+  let todo = 0, objTodo = 0;
+  for (const w of windows) for (let tr = w.a; tr <= w.b; tr += stepFor(tr)) { todo++; if (objFor(tr)) objTodo++; }
+  let done = 0;
+  const tFine = performance.now();
+  for (const w of windows) {
+    for (let tr = w.a; tr <= w.b && running && mode === "video"; tr += stepFor(tr), done++) {
+      await seekTo(tr * slow);
+      processFrame(tr * 1000, { objects: objFor(tr) });
+      const el = (performance.now() - tFine) / 1000;
+      const est = done > 10 ? (el / done) * (todo - done) : ((todo - done) * msPerPose + objTodo * msPerPose * 3) / 1000;
+      setVideoStatus(`${peaks.length} Schläge gefunden · Analyse ${Math.round((done / todo) * 100)} % · noch ca. ${fmtSec(est)}`);
+      if (done % 4 === 0) await yieldUI();
+    }
+  }
+}
+
 /** Springt im Video an Zeitpunkt t (Sekunden) und wartet, bis das Bild da ist. */
 function seekTo(t) {
   return new Promise((res) => {
@@ -195,13 +306,9 @@ async function startVideo(file) {
     // Bild für Bild statt Abspielen: jedes Bild wird analysiert, auch wenn das Handy langsam rechnet
     const total = video.duration;
     if (!Number.isFinite(total) || total <= 0) throw new Error("Videolänge unbekannt – bitte als MP4 aufnehmen");
-    const STEP = 1 / 30; // 30 Bilder pro Sekunde Videozeit
-    let n = 0;
-    for (let tv = 0; tv <= total && running && mode === "video"; tv += STEP, n++) {
-      await seekTo(tv);
-      processFrame((tv * 1000) / slow, { objects: useObjects, progress: tv / total });
-      if (n % 4 === 0) await new Promise((r) => setTimeout(r)); // Oberfläche aktualisieren lassen
-    }
+    const preset = VIDEO_PRESETS[$("opt-speed").value] ?? VIDEO_PRESETS.balanced;
+    if (activeEx.tennis) await analyzeTennisVideo(total, slow, useObjects, preset);
+    else await analyzeVideoLinear(total, preset);
     if (running && mode === "video") finish();
   } catch (e) {
     console.error(e);
@@ -220,13 +327,13 @@ function processFrame(t, { objects = false, progress = null } = {}) {
   const hl = now < highlight.until ? highlight : { joints: [], good: false };
   drawPose(ctx, lm, { highlight: hl.joints, good: hl.good });
   drawObjects(ctx, objs, aspect);
-  if (progress != null) res.message = `${res.message} · Analyse ${Math.round(progress * 100)} %`;
+
 
   $("hud-view").textContent = `Ansicht: ${VIEW_TEXT[analyzer.view]}`;
   $("stage").classList.toggle("pre", !analyzer.base); // Zähler etc. erst nach Kalibrierung
   $("stage").classList.toggle("waiting", res.status === "waiting");
   $("gesture-fill").style.width = `${Math.round((res.gesture ?? 0) * 100)}%`;
-  if (res.status !== lastStatus || res.message !== $("hud-status").textContent) {
+  if (mode !== "video" && (res.status !== lastStatus || res.message !== $("hud-status").textContent)) {
     $("hud-status").textContent = res.message;
     $("hud-status").dataset.state = res.status;
     lastStatus = res.status;
