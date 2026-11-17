@@ -1,7 +1,7 @@
 // Service Worker: App offline nutzbar machen.
 // - App-Dateien: network-first mit Timeout (Updates kommen sofort, bei schlechtem Netz greift der Cache)
 // - MediaPipe (CDN, versioniert, ~10 MB): cache-first in eigenem Cache, der App-Updates überlebt
-const CACHE = "formcoach-v8";
+const CACHE = "formcoach-v9";
 const CDN_CACHE = "formcoach-cdn-v1";
 const SHELL = [
   "./", "index.html", "styles.css", "manifest.json", "icon.svg",

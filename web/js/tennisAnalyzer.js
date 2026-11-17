@@ -30,7 +30,7 @@ export const TENNIS_T = {
   ground: {
     knee: 165,                                 // min. Kniewinkel während des Schlags
     turn: { minor: 0.25, major: 0.12 },        // Schulterdrehung (rel. Verkürzung der Schulterbreite)
-    cramped: 90,                               // Ellbogen im Treffpunkt (Vorhand)
+    cramped: { elbow: 75, reach: 0.8 },        // Vorhand: Arm stark gebeugt UND Hand nah an der Brust
     oneHandElbow: 140,                         // einhändige Rückhand: Arm gestreckt
     twoHandDist: 0.45,                         // Handgelenke näher als das -> beidhändig
     followHigh: 0,                             // Handgelenk endet über Schulterhöhe
@@ -157,15 +157,25 @@ export class TennisAnalyzer {
 
   _win(a, b, frames = this.frames ?? this.buf) { return frames.filter((x) => x.t >= a && x.t <= b); }
 
-  /** Treffpunkt ≈ Frame mit der höchsten (ungeglätteten) Geschwindigkeit der Schlaghand rund um die Spitze. */
-  _contactFrame(peakT) {
-    const w = this._win(peakT - 400, peakT + 100);
-    let best = w.at(-1), bestV = -1;
-    for (let i = 1; i < w.length; i++) {
-      const v = dist(w[i].dw, w[i - 1].dw) / w[i].torso / Math.max(1e-3, (w[i].t - w[i - 1].t) / 1000);
-      if (v > bestV) { bestV = v; best = w[i]; }
-    }
-    return best;
+  /**
+   * Treffpunkt ≈ schnellster Moment der Schlaghand rund um die Spitze.
+   * Grundschläge: nur Frames, in denen das Handgelenk NICHT über der Schulter ist – bei niedriger
+   * Bildrate (Handy live ~10–15 fps) liegt sonst oft schon der hohe Ausschwung im "schnellsten" Frame.
+   */
+  _contactFrame(peakT, groundstroke = this.stroke !== "serve") {
+    const w = this._win(peakT - 450, peakT + 100);
+    const pick = (ok) => {
+      let best = null, bestV = -1;
+      for (let i = 1; i < w.length; i++) {
+        if (!ok(w[i])) continue;
+        // Geschwindigkeit über die Nachbarframes mitteln (robuster bei wenigen Bildern)
+        const v = dist(w[i].dw, w[i - 1].dw) / w[i].torso / Math.max(1e-3, (w[i].t - w[i - 1].t) / 1000);
+        if (v > bestV) { bestV = v; best = w[i]; }
+      }
+      return best;
+    };
+    const belowShoulder = (x) => x.dw.y > x.ds.y - 0.1 * x.torso;
+    return (groundstroke ? pick(belowShoulder) : null) ?? pick(() => true) ?? w.at(-1);
   }
 
   /** Zurückgelegte Strecke eines Handgelenks (in Rumpflängen) in einem Zeitfenster. */
@@ -183,13 +193,17 @@ export class TennisAnalyzer {
 
   /** Welcher Schlag war das? serve | forehand | backhand | unknown */
   _classify(peakT) {
-    // Aufschlag: Schlaghand ist IM Treffpunkt (schnellster Moment) über dem Kopf.
-    // Der Ausschwung zählt nicht – eine Vorhand endet oft hoch über der Schulter,
-    // und die Gegenhand (z. B. zum Ball zeigen) spielt keine Rolle.
-    const c = this._contactFrame(peakT);
-    const height = c ? (c.nose.y - c.dw.y) / c.torso : -9;
+    // Aufschlag braucht ZWEI Merkmale:
+    //  1. Ausholen über Kopf: vor der schnellen Phase war die Schlaghand deutlich über der Schulter (Trophy-Position)
+    //  2. Treffpunkt über dem Kopf
+    // Ein hoher Vorhand-Ausschwung erfüllt nur (2) – und auch das nur bei niedriger Bildrate scheinbar.
+    const prep = this._win(peakT - 1100, peakT - 150);
+    const prepAboveShoulder = prep.length ? Math.max(...prep.map((x) => (x.ds.y - x.dw.y) / x.torso)) : -9;
+    const around = this._win(peakT - 450, peakT + 50);
+    const height = around.length ? Math.max(...around.map((x) => (x.nose.y - x.dw.y) / x.torso)) : -9;
     this._lastHeight = height;
-    if (height > 0.2) return "serve";
+    this._lastPrep = prepAboveShoulder;
+    if (height > 0.1 && prepAboveShoulder > 0.3) return "serve";
     // Ausholbewegung: wo ist das Handgelenk relativ zum Körper (Schlagseite / Gegenseite)?
     const back = this._win(peakT - 900, peakT - 100);
     if (!back.length) return "unknown";
@@ -221,7 +235,7 @@ export class TennisAnalyzer {
       // "unknown" (z. B. seitlich gefilmt) wird als der gewählte Schlag gewertet.
       if (detected !== "unknown" && detected !== this.stroke) {
         this.discarded++;
-        this.discardedSwings.push({ t: Math.round(s.peakT), detected, swapped, peakD: +s.peakD.toFixed(2), peakO: +s.peakO.toFixed(2), heightBeforeContact: +this._lastHeight.toFixed(2) });
+        this.discardedSwings.push({ t: Math.round(s.peakT), detected, swapped, peakD: +s.peakD.toFixed(2), peakO: +s.peakO.toFixed(2), heightAtContact: +this._lastHeight.toFixed(2), prepAboveShoulder: +this._lastPrep.toFixed(2) });
         this.onEvent("discarded", `${STROKE_NAMES[detected]} erkannt`);
         return;
       }
@@ -263,6 +277,7 @@ export class TennisAnalyzer {
       const G = T.ground;
       const contact = peakFrame;
       m.elbowContact = contact.elbow;
+      m.reach = dist(contact.dw, contact.shMid) / contact.torso; // Abstand Hand – Brustmitte
       m.twoHanded = dist(contact.dw, contact.ow) / contact.torso < G.twoHandDist;
       m.followHigh = post.length ? Math.max(...post.map((x) => (x.ds.y - x.dw.y) / x.torso)) : NaN;
       const open = this._win(t0 - 2500, t0 - 700).map((x) => x.swr);
@@ -274,7 +289,9 @@ export class TennisAnalyzer {
         else if (m.turn < G.turn.minor) add("turn", "minor", m.turn);
       }
       if (m.kneeMin > G.knee) add("ground_knees", "minor", m.kneeMin);
-      if (this.stroke === "forehand" && m.elbowContact < G.cramped) add("cramped", "minor", m.elbowContact);
+      // "Ball zu nah" nur, wenn der Arm stark gebeugt ist UND die Hand nah am Körper – ein angewinkelter
+      // Arm allein ist bei moderner Vorhand normal ("double bend").
+      if (this.stroke === "forehand" && m.elbowContact < G.cramped.elbow && m.reach < G.cramped.reach) add("cramped", "minor", m.elbowContact);
       if (this.stroke === "backhand" && !m.twoHanded && m.elbowContact < G.oneHandElbow) add("bh_arm_bent", "minor", m.elbowContact);
       if (Number.isFinite(m.followHigh) && m.followHigh < G.followHigh) add("low_follow", "minor", m.followHigh);
     }

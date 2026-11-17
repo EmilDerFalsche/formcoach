@@ -109,11 +109,11 @@ function strokeKeys(kind, o = {}) {
     [4200, {}], [5200, {}],
   ];
 }
-function runTennis(stroke, playKind, o = {}, n = 3, { gestures = false } = {}) {
+function runTennis(stroke, playKind, o = {}, n = 3, { gestures = false, fps = 30 } = {}) {
   let finished = false;
   const discarded = [];
   const a = new TennisAnalyzer({ stroke, hand: "R", requireStartGesture: gestures, stopGesture: gestures, onFinish: () => (finished = true), onEvent: (ty, info) => ty === "discarded" && discarded.push(info) });
-  let t = 0; const dt = 1000 / 30;
+  let t = 0; const dt = 1000 / fps;
   const push = (lm) => { a.update(lm, t, 1); t += dt; };
   if (gestures) {
     const up = toLm({ ...BASE, lwr: [0.42, 0.05], lel: [0.41, 0.2] });
@@ -146,7 +146,7 @@ export function runExerciseTests() {
   for (const [name, o, expect] of pushCases) {
     const { a } = runPushups(o);
     const found = keys(a);
-    out.push({ name, ok: a.reps.length === 3 && same(found, expect), reps: a.reps.length, view: a.view, found: sorted(found), metrics: a.reps[0]?.metrics });
+    out.push({ name, ok: a.reps.length === 3 && same(found, expect), reps: a.reps.length, view: a.view, found: sorted(found), metrics: a.reps[0]?.metrics ?? a.discardedSwings?.[0] });
   }
   {
     const { a, finished } = runPushups({}, 2, { gestures: true });
@@ -170,10 +170,18 @@ export function runExerciseTests() {
     ["Tennis Aufschlag – Ballwurfarm unten", "serve", "serve", { noToss: true }, ["serve_toss_arm"]],
     ["Tennis Aufschlag – kurzer Ausschwung", "serve", "serve", { shortFollow: true }, ["serve_short_follow"]],
   ];
-  for (const [name, stroke, play, o, expect] of tennisCases) {
-    const { a } = runTennis(stroke, play, o);
+  // Handy live: nur ~10–15 Bilder/s (aus echtem Export gemessen: ~11 fps)
+  const lowFps = [
+    ["12 fps: Vorhand – hoher Ausschwung + zeigende Hand", "forehand", "forehand", { highFinish: true, pointLeft: true }, []],
+    ["12 fps: Vorhand – sauber", "forehand", "forehand", {}, []],
+    ["12 fps: Vorhand – Ball zu nah am Körper", "forehand", "forehand", { cramped: true }, ["cramped"]],
+    ["12 fps: Aufschlag – sauber", "serve", "serve", {}, []],
+    ["12 fps: Rückhand beidhändig – sauber", "backhand", "backhand", { twoHanded: true }, []],
+  ].map(([n, s, p, o, e]) => [n, s, p, o, e, 12]);
+  for (const [name, stroke, play, o, expect, fps] of [...tennisCases, ...lowFps]) {
+    const { a } = runTennis(stroke, play, o, 3, { fps: fps ?? 30 });
     const found = keys(a);
-    out.push({ name, ok: a.reps.length === 3 && same(found, expect), reps: a.reps.length, view: a.view, found: sorted(found), metrics: a.reps[0]?.metrics });
+    out.push({ name, ok: a.reps.length === 3 && same(found, expect), reps: a.reps.length, view: a.view, found: sorted(found), metrics: a.reps[0]?.metrics ?? a.discardedSwings?.[0] });
   }
   {
     const { a, discarded } = runTennis("forehand", "backhand", { twoHanded: true }, 2);
