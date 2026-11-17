@@ -263,7 +263,7 @@ function finish() {
   lastExport = {
     app: "FormCoach", version: 3, exercise: ex.id, hand: ex.tennis ? sel.hand : undefined,
     date: new Date().toISOString(), mode, view,
-    baseline: analyzer.base, thresholds, discarded: analyzer.discarded,
+    baseline: analyzer.base, thresholds, discarded: analyzer.discarded, discardedSwings: analyzer.discardedSwings,
     reps: reps.map(({ ml, ...r }) => ({ ...r, ml: ml ? { label: ml.label, confidence: ml.confidence } : null })),
     trace: trace.map((p) => ({ t: Math.round(p.t), d: Math.round(p.d * 1000) / 1000 })),
   };

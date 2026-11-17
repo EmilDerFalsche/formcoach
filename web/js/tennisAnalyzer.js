@@ -56,12 +56,13 @@ export class TennisAnalyzer {
     this.state = this.requireStartGesture ? "waiting" : "setup"; // waiting | setup | ready | finished
     this.base = null;
     this.buf = [];
-    this.speed = 0;
+    this.speed = 0; this.speedD = 0; this.speedO = 0;
     this.swing = null;
     this.cooldownUntil = 0;
     this.reps = [];
     this.trace = [];
     this.discarded = 0;
+    this.discardedSwings = [];   // für den Export: warum wurden Schläge nicht gewertet?
     this.setupCount = 0;
     this.swrWin = [];
   }
@@ -74,15 +75,16 @@ export class TennisAnalyzer {
     const d = R ? { s: 12, e: 14, w: 16, h: 24 } : { s: 11, e: 13, w: 15, h: 23 };
     const o = R ? { s: 11, e: 13, w: 15, h: 23 } : { s: 12, e: 14, w: 16, h: 24 };
     const ds = P(d.s), de = P(d.e), dw = P(d.w), dh = P(d.h);
-    const os = P(o.s), ow = P(o.w), oh = P(o.h);
+    const os = P(o.s), oe = P(o.e), ow = P(o.w), oh = P(o.h);
     const nose = P(0);
     const hipMid = { x: (dh.x + oh.x) / 2, y: (dh.y + oh.y) / 2 };
     const shMid = { x: (ds.x + os.x) / 2, y: (ds.y + os.y) / 2 };
     const torso = dist(shMid, hipMid) || 1e-3;
     const knee = (h, k, a) => ((lm[k].visibility ?? 1) > 0.5 ? angle(P(h), P(k), P(a)) : 180);
     return {
-      t, ds, de, dw, dh, os, ow, oh, nose, hipMid, shMid, torso,
+      t, ds, de, dw, dh, os, oe, ow, oh, nose, hipMid, shMid, torso,
       elbow: angle(ds, de, dw),
+      oelbow: angle(os, oe, ow),
       knee: Math.min(knee(23, 25, 27), knee(24, 26, 28)),
       swr: Math.abs(ds.x - os.x) / torso,
       visibility: [d.s, d.e, d.w, 23, 24].reduce((s, i) => s + (lm[i].visibility ?? 1), 0) / 5,
@@ -120,11 +122,15 @@ export class TennisAnalyzer {
       if (g > 0) return { status: "ready", message: `Beide Hände oben halten … ${Math.round(g * 100)} %`, gesture: g, depth: 0 };
     }
 
-    // Geschwindigkeit des Handgelenks (geglättet), in Rumpflängen pro Sekunde
+    // Geschwindigkeit BEIDER Handgelenke (geglättet), in Rumpflängen pro Sekunde.
+    // Die schnellere Hand ist die Schlaghand – das fängt vertauschte Links/Rechts-Erkennung ab
+    // (passiert bei MediaPipe v. a., wenn man von hinten filmt).
     const prev = this.buf[this.buf.length - 1];
     if (prev && tMs > prev.t) {
-      const v = dist(f.dw, prev.dw) / f.torso / ((tMs - prev.t) / 1000);
-      this.speed = 0.6 * v + 0.4 * this.speed;
+      const dt = (tMs - prev.t) / 1000;
+      this.speedD = 0.6 * (dist(f.dw, prev.dw) / f.torso / dt) + 0.4 * (this.speedD ?? 0);
+      this.speedO = 0.6 * (dist(f.ow, prev.ow) / f.torso / dt) + 0.4 * (this.speedO ?? 0);
+      this.speed = Math.max(this.speedD, this.speedO);
     }
     f.speed = this.speed;
     this.buf.push(f);
@@ -134,8 +140,10 @@ export class TennisAnalyzer {
 
     // Schlag erkennen
     if (!this.swing && tMs >= this.cooldownUntil && this.speed > T.swingSpeed) {
-      this.swing = { peakT: tMs, peakSpeed: this.speed };
+      this.swing = { peakT: tMs, peakSpeed: this.speed, peakD: this.speedD ?? 0, peakO: this.speedO ?? 0 };
     } else if (this.swing) {
+      this.swing.peakD = Math.max(this.swing.peakD, this.speedD ?? 0);
+      this.swing.peakO = Math.max(this.swing.peakO, this.speedO ?? 0);
       if (this.speed > this.swing.peakSpeed && tMs - this.swing.peakT < 400) { this.swing.peakT = tMs; this.swing.peakSpeed = this.speed; }
       if (tMs >= this.swing.peakT + T.evalDelayMs) {
         const s = this.swing;
@@ -147,14 +155,41 @@ export class TennisAnalyzer {
     return { status: this.swing ? "down" : "ready", message: this.swing ? "Schlag …" : `Bereit – ${STROKE_NAMES[this.stroke]}`, depth: meter };
   }
 
-  _win(a, b) { return this.buf.filter((x) => x.t >= a && x.t <= b); }
+  _win(a, b, frames = this.frames ?? this.buf) { return frames.filter((x) => x.t >= a && x.t <= b); }
+
+  /** Treffpunkt ≈ Frame mit der höchsten (ungeglätteten) Geschwindigkeit der Schlaghand rund um die Spitze. */
+  _contactFrame(peakT) {
+    const w = this._win(peakT - 400, peakT + 100);
+    let best = w.at(-1), bestV = -1;
+    for (let i = 1; i < w.length; i++) {
+      const v = dist(w[i].dw, w[i - 1].dw) / w[i].torso / Math.max(1e-3, (w[i].t - w[i - 1].t) / 1000);
+      if (v > bestV) { bestV = v; best = w[i]; }
+    }
+    return best;
+  }
+
+  /** Zurückgelegte Strecke eines Handgelenks (in Rumpflängen) in einem Zeitfenster. */
+  _path(key, a, b) {
+    const w = this._win(a, b, this.buf);
+    let sum = 0;
+    for (let i = 1; i < w.length; i++) sum += dist(w[i][key], w[i - 1][key]) / w[i].torso;
+    return sum;
+  }
+
+  /** Rollen tauschen: Gegenhand wird zur Schlaghand (bei vertauschter Links/Rechts-Erkennung). */
+  static _swap(x) {
+    return { ...x, ds: x.os, os: x.ds, de: x.oe, oe: x.de, dw: x.ow, ow: x.dw, dh: x.oh, oh: x.dh, elbow: x.oelbow, oelbow: x.elbow };
+  }
 
   /** Welcher Schlag war das? serve | forehand | backhand | unknown */
   _classify(peakT) {
-    // Die schnellste Handbewegung liegt oft kurz NACH dem Treffpunkt (Ausschwung) -> Fenster nach vorne erweitert
-    const around = this._win(peakT - 450, peakT + 200);
-    const height = Math.max(...around.map((x) => (x.nose.y - x.dw.y) / x.torso));
-    if (height > 0.15) return "serve";
+    // Aufschlag: Schlaghand ist IM Treffpunkt (schnellster Moment) über dem Kopf.
+    // Der Ausschwung zählt nicht – eine Vorhand endet oft hoch über der Schulter,
+    // und die Gegenhand (z. B. zum Ball zeigen) spielt keine Rolle.
+    const c = this._contactFrame(peakT);
+    const height = c ? (c.nose.y - c.dw.y) / c.torso : -9;
+    this._lastHeight = height;
+    if (height > 0.2) return "serve";
     // Ausholbewegung: wo ist das Handgelenk relativ zum Körper (Schlagseite / Gegenseite)?
     const back = this._win(peakT - 900, peakT - 100);
     if (!back.length) return "unknown";
@@ -171,20 +206,32 @@ export class TennisAnalyzer {
 
   _finishSwing(s) {
     // Endet die Bewegung mit beiden Händen über dem Kopf, ist es das Stopp-Zeichen, kein Schlag
-    const end = this._win(s.peakT + 300, s.peakT + TENNIS_T.evalDelayMs);
+    const end = this._win(s.peakT + 300, s.peakT + TENNIS_T.evalDelayMs, this.buf);
     const bothUp = end.length && end.every((x) => x.dw.y < x.nose.y && x.ow.y < x.nose.y);
     if (bothUp) return;
-    const detected = this._classify(s.peakT);
-    // Anderer Schlag als trainiert (z. B. Rückhand im Vorhand-Training) -> nicht werten.
-    // "unknown" (z. B. seitlich gefilmt) wird als der gewählte Schlag gewertet.
-    if (detected !== "unknown" && detected !== this.stroke) {
-      this.discarded++;
-      this.onEvent("discarded", `${STROKE_NAMES[detected]} erkannt`);
-      return;
+    // Welche Hand hat geschlagen? Die Hand mit deutlich mehr Weg rund um den Schlag.
+    // (Robuster als eine einzelne Geschwindigkeitsspitze, z. B. wenn der Wurfarm schnell herunterfällt.)
+    const pathD = this._path("dw", s.peakT - 500, s.peakT + 300);
+    const pathO = this._path("ow", s.peakT - 500, s.peakT + 300);
+    const swapped = pathO > 1.3 * pathD;
+    this.frames = swapped ? this.buf.map(TennisAnalyzer._swap) : this.buf;
+    try {
+      const detected = this._classify(s.peakT);
+      // Anderer Schlag als trainiert (z. B. Rückhand im Vorhand-Training) -> nicht werten.
+      // "unknown" (z. B. seitlich gefilmt) wird als der gewählte Schlag gewertet.
+      if (detected !== "unknown" && detected !== this.stroke) {
+        this.discarded++;
+        this.discardedSwings.push({ t: Math.round(s.peakT), detected, swapped, peakD: +s.peakD.toFixed(2), peakO: +s.peakO.toFixed(2), heightBeforeContact: +this._lastHeight.toFixed(2) });
+        this.onEvent("discarded", `${STROKE_NAMES[detected]} erkannt`);
+        return;
+      }
+      const rep = this._evaluate(s, detected);
+      rep.metrics.swappedHands = swapped;
+      this.reps.push(rep);
+      this.onRep(rep);
+    } finally {
+      this.frames = null;
     }
-    const rep = this._evaluate(s, detected);
-    this.reps.push(rep);
-    this.onRep(rep);
   }
 
   _evaluate(s, detected) {
@@ -192,7 +239,7 @@ export class TennisAnalyzer {
     const pre = this._win(t0 - 1500, t0);
     const post = this._win(t0 + 1, t0 + T.evalDelayMs);
     const around = this._win(t0 - 450, t0 + 150);
-    const peakFrame = this._win(t0, t0).at(-1) ?? around.at(-1);
+    const peakFrame = this._contactFrame(t0) ?? around.at(-1);
     const issues = [];
     const add = (key, severity, value) => issues.push({ key, severity, value });
     const m = { stroke: this.stroke, detected, peakSpeed: s.peakSpeed, kneeMin: Math.min(...pre.map((x) => x.knee)) };

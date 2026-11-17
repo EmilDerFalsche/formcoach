@@ -69,14 +69,20 @@ function timeline(keys) {
 function strokeKeys(kind, o = {}) {
   const straight = o.straightLegs ? { lkn: [0.45, 0.75], rkn: [0.55, 0.75] } : {};
   const compress = o.noTurn ? {} : { lsh: [0.48, 0.4], rsh: [0.52, 0.4] };
-  if (kind === "forehand") return [
-    [0, straight], [1500, straight],
-    [2100, { ...straight, ...compress, rwr: [0.8, 0.55], rel: [0.7, 0.5] }],
-    [2350, { ...straight, rwr: [0.55, 0.5], rel: o.cramped ? [0.62, 0.28] : [0.58, 0.45] }],
-    [2500, { ...straight, rwr: o.lowFollow ? [0.35, 0.62] : [0.35, 0.36], rel: o.cramped ? [0.55, 0.25] : [0.45, 0.4] }],
-    [3100, { ...straight, rwr: o.lowFollow ? [0.35, 0.62] : [0.35, 0.36], rel: [0.45, 0.4] }],
-    [4000, straight], [5000, straight],
-  ];
+  if (kind === "forehand") {
+    const finish = o.lowFollow ? [0.35, 0.62] : o.highFinish ? [0.36, 0.1] : [0.35, 0.36];
+    const finishEl = o.highFinish ? [0.42, 0.22] : [0.45, 0.4];
+    const point = o.pointLeft ? { lwr: [0.3, 0.12], lel: [0.35, 0.25] } : {}; // linke Hand zeigt hoch zum Ball
+    return [
+      [0, straight], [1500, straight],
+      [2100, { ...straight, ...compress, ...point, rwr: [0.8, 0.55], rel: [0.7, 0.5] }],
+      [2300, { ...straight, ...point, rwr: [0.55, 0.5], rel: o.cramped ? [0.62, 0.28] : [0.58, 0.45] }],   // Treffpunkt
+      [2380, { ...straight, ...(o.pointLeft ? { lwr: [0.32, 0.2], lel: [0.36, 0.28] } : {}), rwr: [0.45, 0.42], rel: o.cramped ? [0.55, 0.3] : [0.52, 0.42] }],
+      [2750, { ...straight, ...(o.pointLeft ? { lwr: [0.4, 0.45], lel: [0.38, 0.45] } : {}), rwr: finish, rel: finishEl }], // Ausschwung, linke Hand sinkt
+      [3100, { ...straight, rwr: finish, rel: finishEl }],
+      [4000, straight], [5000, straight],
+    ];
+  }
   if (kind === "backhand") {
     const two = o.twoHanded;
     return [
@@ -95,9 +101,10 @@ function strokeKeys(kind, o = {}) {
   const follow = o.shortFollow ? { rwr: [0.62, 0.45], rel: [0.66, 0.42] } : { rwr: [0.4, 0.72], rel: [0.45, 0.6] };
   return [
     [0, {}], [1500, {}],
-    [2200, { ...bent, ...toss, rwr: [0.68, 0.3], rel: [0.7, 0.38] }],
-    [2350, { ...contact }],
-    [2600, { ...follow }],
+    [2050, { ...bent, ...toss, rwr: [0.68, 0.3], rel: [0.7, 0.38] }],          // Trophy-Position
+    [2250, { ...bent, ...toss, rwr: [0.7, 0.42], rel: [0.7, 0.32] }],          // Schläger fällt hinter den Rücken
+    [2350, { ...contact, ...(o.noToss ? {} : { lwr: [0.43, 0.25], lel: [0.42, 0.33] }) }], // Treffpunkt, Wurfarm sinkt langsam
+    [2750, { ...follow }],
     [3200, { ...follow }],
     [4200, {}], [5200, {}],
   ];
@@ -114,7 +121,9 @@ function runTennis(stroke, playKind, o = {}, n = 3, { gestures = false } = {}) {
     for (let i = 0; i < 15; i++) push(toLm(BASE));
   }
   const tl = timeline(strokeKeys(playKind, o));
-  for (let k = 0; k < n; k++) for (let s = 0; s < 5200; s += dt) push(tl(s));
+  const SWAP = [[7, 8], [11, 12], [13, 14], [15, 16], [23, 24], [25, 26], [27, 28], [29, 30], [31, 32]];
+  const mirrorLabels = (lm) => { const c = lm.slice(); for (const [a, b] of SWAP) { c[a] = lm[b]; c[b] = lm[a]; } return c; };
+  for (let k = 0; k < n; k++) for (let s = 0; s < 5200; s += dt) push(o.swapLabels ? mirrorLabels(tl(s)) : tl(s));
   if (gestures) {
     const both = toLm({ ...BASE, lwr: [0.42, 0.05], lel: [0.41, 0.2], rwr: [0.58, 0.05], rel: [0.59, 0.2] });
     for (let i = 0; i < 45; i++) push(both);
@@ -150,6 +159,9 @@ export function runExerciseTests() {
     ["Tennis Vorhand – flacher Ausschwung", "forehand", "forehand", { lowFollow: true }, ["low_follow"]],
     ["Tennis Vorhand – gestreckte Beine", "forehand", "forehand", { straightLegs: true }, ["ground_knees"]],
     ["Tennis Vorhand – Ball zu nah am Körper", "forehand", "forehand", { cramped: true }, ["cramped"]],
+    ["Tennis Vorhand – Ausschwung über Kopfhöhe (kein Aufschlag!)", "forehand", "forehand", { highFinish: true }, []],
+    ["Tennis Vorhand – linke Hand zeigt hoch zum Ball", "forehand", "forehand", { pointLeft: true, highFinish: true }, []],
+    ["Tennis Vorhand – MediaPipe vertauscht links/rechts (von hinten)", "forehand", "forehand", { swapLabels: true, pointLeft: true, highFinish: true }, []],
     ["Tennis Rückhand beidhändig – sauber", "backhand", "backhand", { twoHanded: true }, []],
     ["Tennis Rückhand einhändig – Arm gebeugt", "backhand", "backhand", { bent: true }, ["bh_arm_bent"]],
     ["Tennis Aufschlag – sauber", "serve", "serve", {}, []],
