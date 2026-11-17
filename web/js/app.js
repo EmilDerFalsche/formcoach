@@ -250,7 +250,11 @@ async function analyzeTennisVideo(total, slow, useObjects, preset) {
     const last = windows.at(-1);
     if (last && a <= last.b) last.b = b; else windows.push({ a, b });
   }
-  const objFor = (tr) => useObjects && peaks.some((pk) => tr >= pk.t - preset.objPre && tr <= pk.t + preset.objPost);
+  // Schläger-/Ballerkennung: nur im Fenster um den Treffpunkt – und automatisch aus, wenn in den
+  // ersten Schlägen kein Schläger gefunden wird (z. B. Schattenschläge ohne Schläger)
+  let objectsActive = useObjects;
+  const AUTO_OFF_FRAMES = 40;
+  const objFor = (tr) => objectsActive && peaks.some((pk) => tr >= pk.t - preset.objPre && tr <= pk.t + preset.objPost);
 
   // Feinanalyse: höchstens so viele Bilder, wie das Video hergibt (Annahme: Datei mit 30 Bildern/s)
   const fineStep = Math.max(1 / preset.fineFps, 1 / (30 * slow));
@@ -264,6 +268,11 @@ async function analyzeTennisVideo(total, slow, useObjects, preset) {
     for (let tr = w.a; tr <= w.b && running && mode === "video"; tr += stepFor(tr), done++) {
       await seekTo(tr * slow);
       processFrame(tr * 1000, { objects: objFor(tr) });
+      const vo = videoInfo?.objects;
+      if (objectsActive && vo && vo.framesRun >= AUTO_OFF_FRAMES && vo.racketFrames === 0) {
+        objectsActive = false;
+        vo.autoDisabled = true;
+      }
       const el = (performance.now() - tFine) / 1000;
       const est = done > 10 ? (el / done) * (todo - done) : ((todo - done) * msPerPose + objTodo * msPerPose * 3) / 1000;
       setVideoStatus(`${peaks.length} Schläge gefunden · Analyse ${Math.round((done / todo) * 100)} % · noch ca. ${fmtSec(est)}`);
@@ -459,6 +468,7 @@ function renderResult(reps, sum, trace, view, ex = activeEx) {
   if (ex.tennis && mode === "video" && vo?.enabled && lastExport) {
     let msg = "";
     if (!vo.loaded) msg = `Die Schläger- und Ballerkennung konnte nicht geladen werden${vo.error ? ` (${vo.error})` : ""}. Der Treffpunkt wurde über die Handbewegung geschätzt.`;
+    else if (vo.autoDisabled) msg = "Kein Schläger erkannt (z. B. Schattenschläge) – die Schläger- und Ballerkennung wurde automatisch abgeschaltet, um Zeit zu sparen. Der Treffpunkt wurde über die Handbewegung geschätzt.";
     else if (vo.framesRun && !vo.racketFrames) msg = "Der Schläger wurde in keinem Bild erkannt. Tipps: Schläger gut sichtbar halten, nicht gegen einen unruhigen Hintergrund filmen, Abstand max. 4–5 m. Der Treffpunkt wurde über die Handbewegung geschätzt.";
     else if (vo.framesRun) msg = `Schläger in ${Math.round((vo.racketFrames / vo.framesRun) * 100)} % der untersuchten Bilder erkannt, Ball in ${Math.round((vo.ballFrames / vo.framesRun) * 100)} %.`;
     if (msg) tips.insertAdjacentHTML("beforeend", `<p class="hint">${msg}</p>`);
