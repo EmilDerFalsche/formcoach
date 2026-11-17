@@ -24,6 +24,7 @@ let highlight = { joints: [], until: 0, good: false };
 let lastStatus = "";
 let lastExport = null;
 let activeEx = EXERCISES.squat;   // Übung des laufenden / angezeigten Satzes
+let videoInfo = null;             // Diagnose der Video-Analyse (für Export und Hinweise)
 
 // ---------- Übungsauswahl ----------
 const sel = { exercise: "squat", stroke: "serve", hand: "R" };
@@ -124,6 +125,7 @@ function sizeCanvas() {
 // ---------- Live ----------
 async function startLive() {
   mode = "live";
+  videoInfo = null;
   show("screen-analyze");
   const front = $("opt-front").checked;
   $("stage").classList.toggle("mirror", front);
@@ -289,9 +291,11 @@ async function startVideo(file) {
     // Zeitlupe: Zeit im Video / Faktor = echte Zeit (sonst wirkt jeder Schlag 4–8× zu langsam)
     const slow = activeEx.tennis ? Number($("opt-slowmo").value) || 1 : 1;
     const useObjects = activeEx.tennis && $("opt-objects").checked;
+    videoInfo = { slow, speed: $("opt-speed").value, objects: { enabled: useObjects, loaded: false, error: null, framesRun: 0, racketFrames: 0, ballFrames: 0 } };
     if (useObjects) {
       $("loading-text").textContent = "Lade Schläger- und Ballerkennung …";
-      try { await initObjects(); } catch (e) { console.warn("Objekterkennung nicht verfügbar", e); }
+      try { await initObjects(); videoInfo.objects.loaded = true; }
+      catch (e) { console.warn("Objekterkennung nicht verfügbar", e); videoInfo.objects.error = String(e?.message ?? e); }
     }
     video.srcObject = null;
     video.src = URL.createObjectURL(file);
@@ -322,6 +326,11 @@ function processFrame(t, { objects = false, progress = null } = {}) {
   const aspect = video.videoWidth / video.videoHeight;
   const lm = detect(video);
   const objs = objects ? detectObjects(video) : null;
+  if (objects && videoInfo) {
+    videoInfo.objects.framesRun++;
+    if (objs?.racket) videoInfo.objects.racketFrames++;
+    if (objs?.ball) videoInfo.objects.ballFrames++;
+  }
   const res = analyzer.update(lm, t, aspect, objs);
   const now = performance.now();
   const hl = now < highlight.until ? highlight : { joints: [], good: false };
@@ -400,6 +409,7 @@ function finish() {
     app: "FormCoach", version: 3, exercise: ex.id, hand: ex.tennis ? sel.hand : undefined,
     date: new Date().toISOString(), mode, view,
     baseline: analyzer.base, thresholds, discarded: analyzer.discarded, discardedSwings: analyzer.discardedSwings,
+    video: mode === "video" ? videoInfo : undefined,
     reps: reps.map(({ ml, ...r }) => ({ ...r, ml: ml ? { label: ml.label, confidence: ml.confidence } : null })),
     trace: trace.map((p) => ({ t: Math.round(p.t), d: Math.round(p.d * 1000) / 1000 })),
   };
@@ -445,6 +455,14 @@ function renderResult(reps, sum, trace, view, ex = activeEx) {
   });
   const note = ex.viewNote(view);
   if (note) tips.insertAdjacentHTML("beforeend", `<p class="hint">${note}</p>`);
+  const vo = videoInfo?.objects;
+  if (ex.tennis && mode === "video" && vo?.enabled && lastExport) {
+    let msg = "";
+    if (!vo.loaded) msg = `Die Schläger- und Ballerkennung konnte nicht geladen werden${vo.error ? ` (${vo.error})` : ""}. Der Treffpunkt wurde über die Handbewegung geschätzt.`;
+    else if (vo.framesRun && !vo.racketFrames) msg = "Der Schläger wurde in keinem Bild erkannt. Tipps: Schläger gut sichtbar halten, nicht gegen einen unruhigen Hintergrund filmen, Abstand max. 4–5 m. Der Treffpunkt wurde über die Handbewegung geschätzt.";
+    else if (vo.framesRun) msg = `Schläger in ${Math.round((vo.racketFrames / vo.framesRun) * 100)} % der untersuchten Bilder erkannt, Ball in ${Math.round((vo.ballFrames / vo.framesRun) * 100)} %.`;
+    if (msg) tips.insertAdjacentHTML("beforeend", `<p class="hint">${msg}</p>`);
+  }
 
   const list = $("res-reps");
   list.innerHTML = "";
@@ -576,6 +594,7 @@ async function renderHistory() {
 
 /** Gespeicherten Satz in der Ergebnisansicht öffnen. */
 function openWorkout(w) {
+  videoInfo = null; // Diagnose gilt nur für die gerade analysierte Aufnahme
   const reps = w.reps.map((r) => ({ ...r, issues: r.issues ?? [], metrics: r.metrics ?? {} }));
   const ex = exerciseOf(w.exercise);
   renderResult(reps, summarize(reps, ex.issues, ex.unit), w.trace ?? [], w.view, ex);

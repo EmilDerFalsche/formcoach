@@ -75,6 +75,7 @@ function strokeKeys(kind, o = {}) {
     const point = o.pointLeft ? { lwr: [0.3, 0.12], lel: [0.35, 0.25] } : {}; // linke Hand zeigt hoch zum Ball
     return [
       [0, straight], [1500, straight],
+      ...(o.loop ? [[1850, { ...straight, ...compress, ...point, rwr: [0.72, 0.28], rel: [0.7, 0.36] }]] : []), // Loop: Hand über Schulterhöhe
       [2100, { ...straight, ...compress, ...point, rwr: [0.8, 0.55], rel: [0.7, 0.5] }],
       [2300, { ...straight, ...point, rwr: [0.55, 0.5], rel: o.cramped ? [0.64, 0.5] : [0.58, 0.45] }],   // Treffpunkt (eng: Ellbogen ~70°)
       [2380, { ...straight, ...(o.pointLeft ? { lwr: [0.32, 0.2], lel: [0.36, 0.28] } : {}), rwr: [0.45, 0.42], rel: o.cramped ? [0.48, 0.5] : [0.52, 0.42] }],
@@ -187,6 +188,7 @@ export function runExerciseTests() {
     ["Tennis Vorhand – Ball zu nah am Körper", "forehand", "forehand", { cramped: true }, ["cramped"]],
     ["Tennis Vorhand – Ausschwung über Kopfhöhe (kein Aufschlag!)", "forehand", "forehand", { highFinish: true }, []],
     ["Tennis Vorhand – linke Hand zeigt hoch zum Ball", "forehand", "forehand", { pointLeft: true, highFinish: true }, []],
+    ["Tennis Vorhand – Loop-Ausholen über Schulter + hoher Ausschwung", "forehand", "forehand", { loop: true, highFinish: true, pointLeft: true }, []],
     ["Tennis Vorhand – MediaPipe vertauscht links/rechts (von hinten)", "forehand", "forehand", { swapLabels: true, pointLeft: true, highFinish: true }, []],
     ["Tennis Rückhand beidhändig – sauber", "backhand", "backhand", { twoHanded: true }, []],
     ["Tennis Rückhand einhändig – Arm gebeugt", "backhand", "backhand", { bent: true }, ["bh_arm_bent"]],

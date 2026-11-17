@@ -11,6 +11,7 @@ import { angle, dist } from "./features.js";
 import { HandRaise } from "./gesture.js";
 
 const VIEW_OF = (swr) => (swr > 0.45 ? "front" : swr < 0.28 ? "side" : "diagonal");
+const percentile = (a, p) => { if (!a.length) return NaN; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const median = (a) => { if (!a.length) return NaN; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 export const TENNIS_T = {
@@ -18,7 +19,7 @@ export const TENNIS_T = {
   swingSpeed: 4.5,        // Handgelenk-Geschwindigkeit (Rumpflängen/s), ab der ein Schlag beginnt
   minPeakSpeed: 6,        // so schnell muss die Spitze mindestens sein
   evalDelayMs: 800,       // Ausschwung abwarten, bevor bewertet wird
-  cooldownMs: 1000,       // Mindestabstand zwischen zwei Schlägen
+  cooldownMs: 1400,       // Mindestabstand zwischen zwei Schlägen (verhindert, dass das Zurückführen als Schlag zählt)
   bufferMs: 3500,
   serve: {
     knee: { minor: 145, major: 158 },          // min. Kniewinkel (innen) beim Ausholen
@@ -242,7 +243,12 @@ export class TennisAnalyzer {
     const height = around.length ? Math.max(...around.map((x) => (x.nose.y - x.dw.y) / x.torso)) : -9;
     this._lastHeight = height;
     this._lastPrep = prepAboveShoulder;
-    if (height > 0.1 && prepAboveShoulder > 0.3) return "serve";
+    // Im Aufschlag-Training großzügig, im Grundschlag-Training nur bei eindeutigem Aufschlag
+    // (eine Loop-Vorhand holt oft über Schulterhöhe aus und endet hoch).
+    const strict = this.stroke !== "serve";
+    const tossUp = prep.length ? Math.max(...prep.map((x) => (x.nose.y - x.ow.y) / x.torso)) : -9; // Ballwurfarm über dem Kopf
+    this._lastToss = tossUp;
+    if (strict ? height > 0.9 && (prepAboveShoulder > 0.8 || tossUp > 0.3) : height > 0.1 && prepAboveShoulder > 0.3) return "serve";
     // Ausholbewegung: wo ist das Handgelenk relativ zum Körper (Schlagseite / Gegenseite)?
     const back = this._win(peakT - 900, peakT - 100);
     if (!back.length) return "unknown";
@@ -266,7 +272,9 @@ export class TennisAnalyzer {
     // (Robuster als eine einzelne Geschwindigkeitsspitze, z. B. wenn der Wurfarm schnell herunterfällt.)
     const pathD = this._path("dw", s.peakT - 500, s.peakT + 300);
     const pathO = this._path("ow", s.peakT - 500, s.peakT + 300);
-    const swapped = pathO > 1.3 * pathD;
+    // Tauschen, wenn die andere Hand bei Weg UND Spitzentempo klar vorne liegt – oder beim Weg sehr deutlich.
+    // (Die freie Hand bewegt sich bei Grundschlägen auch, daher nicht schon bei knappen Unterschieden.)
+    const swapped = (pathO > 1.3 * pathD && s.peakO > 1.3 * s.peakD) || pathO > 2 * pathD;
     this.frames = swapped ? this.buf.map(TennisAnalyzer._swap) : this.buf;
     try {
       const detected = this._classify(s.peakT);
@@ -274,7 +282,7 @@ export class TennisAnalyzer {
       // "unknown" (z. B. seitlich gefilmt) wird als der gewählte Schlag gewertet.
       if (detected !== "unknown" && detected !== this.stroke) {
         this.discarded++;
-        this.discardedSwings.push({ t: Math.round(s.peakT), detected, swapped, peakD: +s.peakD.toFixed(2), peakO: +s.peakO.toFixed(2), heightAtContact: +this._lastHeight.toFixed(2), prepAboveShoulder: +this._lastPrep.toFixed(2) });
+        this.discardedSwings.push({ t: Math.round(s.peakT), detected, swapped, peakD: +s.peakD.toFixed(2), peakO: +s.peakO.toFixed(2), heightAtContact: +this._lastHeight.toFixed(2), prepAboveShoulder: +this._lastPrep.toFixed(2), tossArm: +(this._lastToss ?? NaN).toFixed(2) });
         this.onEvent("discarded", `${STROKE_NAMES[detected]} erkannt`);
         return;
       }
@@ -298,7 +306,8 @@ export class TennisAnalyzer {
     const racketFrames = swingWin.filter((x) => x.racket).length;
     const ballFrames = swingWin.filter((x) => x.ball).length;
     const m = {
-      stroke: this.stroke, detected, peakSpeed: s.peakSpeed, kneeMin: Math.min(...pre.map((x) => x.knee)),
+      // 10%-Perzentil statt Minimum: einzelne Ausreißer-Bilder verfälschen den Kniewinkel sonst
+      stroke: this.stroke, detected, peakSpeed: s.peakSpeed, kneeMin: percentile(pre.map((x) => x.knee), 0.1),
       racketSeen: swingWin.length ? racketFrames / swingWin.length : 0,
       ballSeen: swingWin.length ? ballFrames / swingWin.length : 0,
     };
