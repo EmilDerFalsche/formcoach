@@ -76,8 +76,8 @@ function strokeKeys(kind, o = {}) {
     return [
       [0, straight], [1500, straight],
       [2100, { ...straight, ...compress, ...point, rwr: [0.8, 0.55], rel: [0.7, 0.5] }],
-      [2300, { ...straight, ...point, rwr: [0.55, 0.5], rel: o.cramped ? [0.62, 0.28] : [0.58, 0.45] }],   // Treffpunkt
-      [2380, { ...straight, ...(o.pointLeft ? { lwr: [0.32, 0.2], lel: [0.36, 0.28] } : {}), rwr: [0.45, 0.42], rel: o.cramped ? [0.55, 0.3] : [0.52, 0.42] }],
+      [2300, { ...straight, ...point, rwr: [0.55, 0.5], rel: o.cramped ? [0.64, 0.5] : [0.58, 0.45] }],   // Treffpunkt (eng: Ellbogen ~70°)
+      [2380, { ...straight, ...(o.pointLeft ? { lwr: [0.32, 0.2], lel: [0.36, 0.28] } : {}), rwr: [0.45, 0.42], rel: o.cramped ? [0.48, 0.5] : [0.52, 0.42] }],
       [2750, { ...straight, ...(o.pointLeft ? { lwr: [0.4, 0.45], lel: [0.38, 0.45] } : {}), rwr: finish, rel: finishEl }], // Ausschwung, linke Hand sinkt
       [3100, { ...straight, rwr: finish, rel: finishEl }],
       [4000, straight], [5000, straight],
@@ -109,12 +109,35 @@ function strokeKeys(kind, o = {}) {
     [4200, {}], [5200, {}],
   ];
 }
+
+/** Simulierter Schläger (aus Hand + Unterarmrichtung) und Ball – wie sie die Objekterkennung liefern würde. */
+function synthObjects(lm, s, kind, o) {
+  const w = lm[16], e = lm[14];
+  const len = Math.hypot(w.x - e.x, w.y - e.y) || 1;
+  // Aufschlag: Schläger in Verlängerung des Arms; Grundschläge: Schläger zeigt im Treffpunkt etwa waagerecht nach außen
+  let racket = kind === "serve"
+    ? { x: w.x + ((w.x - e.x) / len) * 0.2, y: w.y + ((w.y - e.y) / len) * 0.2, w: 0.1, h: 0.1 }
+    : { x: w.x + (kind === "forehand" ? 0.2 : -0.2), y: w.y - 0.02, w: 0.1, h: 0.1 };
+  if (kind === "forehand" && s > 2050 && s < 2250) racket = { ...racket, x: w.x + 0.12, y: w.y + (o.noDrop ? -0.12 : 0.12) }; // Schlägerkopf fällt (Topspin)
+  const racketAt = (ss) => racket; // vereinfachend: Ball fliegt auf den aktuellen Schläger zu
+  let ball = null;
+  if (kind !== "serve") {
+    if (s >= 1900 && s <= 2300) { const k = (s - 1900) / 400; const r = racketAt(s); ball = { x: 0.1 + (r.x - 0.1) * k, y: 0.45 + (r.y - 0.45) * k }; }
+    else if (s > 2300 && s < 2700) { const k = (s - 2300) / 400; ball = { x: 0.6 - 0.5 * k, y: 0.48 - 0.1 * k }; }
+  } else {
+    const apexY = o.tossLow ? 0.05 : -0.24;
+    if (s >= 1500 && s <= 2050) { const k = (s - 1500) / 550; ball = { x: 0.42 + 0.08 * k, y: 0.6 + (apexY - 0.6) * (1 - (1 - k) ** 2) }; }
+    else if (s > 2050 && s <= 2350) { const k = (s - 2050) / 300; ball = { x: 0.5 + (racket.x - 0.5) * k, y: apexY + (racket.y - apexY) * k }; }
+  }
+  return { racket, ball };
+}
+
 function runTennis(stroke, playKind, o = {}, n = 3, { gestures = false, fps = 30 } = {}) {
   let finished = false;
   const discarded = [];
   const a = new TennisAnalyzer({ stroke, hand: "R", requireStartGesture: gestures, stopGesture: gestures, onFinish: () => (finished = true), onEvent: (ty, info) => ty === "discarded" && discarded.push(info) });
   let t = 0; const dt = 1000 / fps;
-  const push = (lm) => { a.update(lm, t, 1); t += dt; };
+  const push = (lm, objs = null) => { a.update(lm, t, 1, objs); t += dt; };
   if (gestures) {
     const up = toLm({ ...BASE, lwr: [0.42, 0.05], lel: [0.41, 0.2] });
     for (let i = 0; i < 30; i++) push(up);
@@ -123,7 +146,10 @@ function runTennis(stroke, playKind, o = {}, n = 3, { gestures = false, fps = 30
   const tl = timeline(strokeKeys(playKind, o));
   const SWAP = [[7, 8], [11, 12], [13, 14], [15, 16], [23, 24], [25, 26], [27, 28], [29, 30], [31, 32]];
   const mirrorLabels = (lm) => { const c = lm.slice(); for (const [a, b] of SWAP) { c[a] = lm[b]; c[b] = lm[a]; } return c; };
-  for (let k = 0; k < n; k++) for (let s = 0; s < 5200; s += dt) push(o.swapLabels ? mirrorLabels(tl(s)) : tl(s));
+  for (let k = 0; k < n; k++) for (let s = 0; s < 5200; s += dt) {
+    const lm = tl(s);
+    push(o.swapLabels ? mirrorLabels(lm) : lm, o.objects ? synthObjects(lm, s, playKind, o) : null);
+  }
   if (gestures) {
     const both = toLm({ ...BASE, lwr: [0.42, 0.05], lel: [0.41, 0.2], rwr: [0.58, 0.05], rel: [0.59, 0.2] });
     for (let i = 0; i < 45; i++) push(both);
@@ -177,8 +203,15 @@ export function runExerciseTests() {
     ["12 fps: Vorhand – Ball zu nah am Körper", "forehand", "forehand", { cramped: true }, ["cramped"]],
     ["12 fps: Aufschlag – sauber", "serve", "serve", {}, []],
     ["12 fps: Rückhand beidhändig – sauber", "backhand", "backhand", { twoHanded: true }, []],
+    ["12 fps: Vorhand mit Schläger & Ball – sauber", "forehand", "forehand", { objects: true }, []],
   ].map(([n, s, p, o, e]) => [n, s, p, o, e, 12]);
-  for (const [name, stroke, play, o, expect, fps] of [...tennisCases, ...lowFps]) {
+  const withObjects = [
+    ["Schläger & Ball: Vorhand – sauber (Treffpunkt über Ball)", "forehand", "forehand", { objects: true }, []],
+    ["Schläger & Ball: Vorhand – kein Topspin-Schwung", "forehand", "forehand", { objects: true, noDrop: true }, ["no_racket_drop"]],
+    ["Schläger & Ball: Aufschlag – sauber", "serve", "serve", { objects: true }, []],
+    ["Schläger & Ball: Aufschlag – Ballwurf zu niedrig", "serve", "serve", { objects: true, tossLow: true }, ["toss_low"]],
+  ];
+  for (const [name, stroke, play, o, expect, fps] of [...tennisCases, ...lowFps, ...withObjects]) {
     const { a } = runTennis(stroke, play, o, 3, { fps: fps ?? 30 });
     const found = keys(a);
     out.push({ name, ok: a.reps.length === 3 && same(found, expect), reps: a.reps.length, view: a.view, found: sorted(found), metrics: a.reps[0]?.metrics ?? a.discardedSwings?.[0] });

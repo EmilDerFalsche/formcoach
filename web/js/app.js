@@ -1,4 +1,4 @@
-import { initPose, detect, drawPose } from "./pose.js";
+import { initPose, detect, drawPose, initObjects, detectObjects, drawObjects } from "./pose.js";
 import { THRESHOLDS } from "./squatAnalyzer.js";
 import { PUSHUP_T } from "./pushupAnalyzer.js";
 import { TENNIS_T } from "./tennisAnalyzer.js";
@@ -65,6 +65,8 @@ function loadSettings() {
     if (["squat", "pushup", "tennis"].includes(s.exercise)) sel.exercise = s.exercise;
     if (["serve", "forehand", "backhand"].includes(s.stroke)) sel.stroke = s.stroke;
     if (s.hand === "L" || s.hand === "R") sel.hand = s.hand;
+    if (s.slowmo) $("opt-slowmo").value = s.slowmo;
+    if ("objects" in s) $("opt-objects").checked = s.objects;
   } catch {}
 }
 function saveSettings() {
@@ -73,10 +75,11 @@ function saveSettings() {
       voice: $("opt-voice").checked, front: $("opt-front").checked,
       gesture: $("opt-gesture").checked, ml2: $("opt-ml").checked, model: $("opt-model").value,
       exercise: sel.exercise, stroke: sel.stroke, hand: sel.hand,
+      slowmo: $("opt-slowmo").value, objects: $("opt-objects").checked,
     }));
   } catch {}
 }
-["opt-voice", "opt-front", "opt-gesture", "opt-ml", "opt-model"].forEach((id) => $(id).addEventListener("change", saveSettings));
+["opt-voice", "opt-front", "opt-gesture", "opt-ml", "opt-model", "opt-slowmo", "opt-objects"].forEach((id) => $(id).addEventListener("change", saveSettings));
 
 // ---------- Setup ----------
 async function prepare() {
@@ -156,12 +159,29 @@ function liveLoop() {
 }
 
 // ---------- Video-Upload ----------
+/** Springt im Video an Zeitpunkt t (Sekunden) und wartet, bis das Bild da ist. */
+function seekTo(t) {
+  return new Promise((res) => {
+    const done = () => { clearTimeout(timer); video.removeEventListener("seeked", done); res(); };
+    const timer = setTimeout(done, 1500);
+    video.addEventListener("seeked", done);
+    video.currentTime = t;
+  });
+}
+
 async function startVideo(file) {
   mode = "video";
   show("screen-analyze");
   $("stage").classList.remove("mirror");
   try {
     await prepare();
+    // Zeitlupe: Zeit im Video / Faktor = echte Zeit (sonst wirkt jeder Schlag 4–8× zu langsam)
+    const slow = activeEx.tennis ? Number($("opt-slowmo").value) || 1 : 1;
+    const useObjects = activeEx.tennis && $("opt-objects").checked;
+    if (useObjects) {
+      $("loading-text").textContent = "Lade Schläger- und Ballerkennung …";
+      try { await initObjects(); } catch (e) { console.warn("Objekterkennung nicht verfügbar", e); }
+    }
     video.srcObject = null;
     video.src = URL.createObjectURL(file);
     video.muted = true;
@@ -170,28 +190,37 @@ async function startVideo(file) {
     $("loading").hidden = true;
     running = true;
     voice.enabled = false; // beim Upload keine Sprachausgabe pro Wdh.
-    video.onended = () => finish();
-    await video.play();
-    const step = () => {
-      if (!running || mode !== "video") return;
-      processFrame(video.currentTime * 1000);
-      if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(step);
-      else requestAnimationFrame(step);
-    };
-    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(step); else requestAnimationFrame(step);
+    video.pause();
+
+    // Bild für Bild statt Abspielen: jedes Bild wird analysiert, auch wenn das Handy langsam rechnet
+    const total = video.duration;
+    if (!Number.isFinite(total) || total <= 0) throw new Error("Videolänge unbekannt – bitte als MP4 aufnehmen");
+    const STEP = 1 / 30; // 30 Bilder pro Sekunde Videozeit
+    let n = 0;
+    for (let tv = 0; tv <= total && running && mode === "video"; tv += STEP, n++) {
+      await seekTo(tv);
+      processFrame((tv * 1000) / slow, { objects: useObjects, progress: tv / total });
+      if (n % 4 === 0) await new Promise((r) => setTimeout(r)); // Oberfläche aktualisieren lassen
+    }
+    if (running && mode === "video") finish();
   } catch (e) {
     console.error(e);
+    $("loading").hidden = false;
     $("loading-text").textContent = `Fehler: ${e.message}`;
   }
 }
 
 // ---------- Gemeinsame Frame-Verarbeitung ----------
-function processFrame(t) {
+function processFrame(t, { objects = false, progress = null } = {}) {
+  const aspect = video.videoWidth / video.videoHeight;
   const lm = detect(video);
-  const res = analyzer.update(lm, t, video.videoWidth / video.videoHeight);
+  const objs = objects ? detectObjects(video) : null;
+  const res = analyzer.update(lm, t, aspect, objs);
   const now = performance.now();
   const hl = now < highlight.until ? highlight : { joints: [], good: false };
   drawPose(ctx, lm, { highlight: hl.joints, good: hl.good });
+  drawObjects(ctx, objs, aspect);
+  if (progress != null) res.message = `${res.message} · Analyse ${Math.round(progress * 100)} %`;
 
   $("hud-view").textContent = `Ansicht: ${VIEW_TEXT[analyzer.view]}`;
   $("stage").classList.toggle("pre", !analyzer.base); // Zähler etc. erst nach Kalibrierung
@@ -293,10 +322,18 @@ function renderResult(reps, sum, trace, view, ex = activeEx) {
   tips.innerHTML = "";
   if (!sum.ranked.length) tips.innerHTML = `<p class="ok">Keine Fehler erkannt – stark!</p>`;
   sum.ranked.forEach((r, i) => {
+    // Beispiel-Wiederholung für "Gesehen": die deutlichste mit diesem Fehler
+    const ex1 = reps.find((x) => x.issues.some((k) => k.key === r.key && k.severity === "major")) ?? reps.find((x) => x.issues.some((k) => k.key === r.key));
+    let seen = r.detail;
+    try { if (r.seen && ex1) seen = r.seen(ex1.metrics); } catch (e) { console.warn(e); }
+    const fix = Array.isArray(r.fix) ? `<ol>${r.fix.map((f) => `<li>${f}</li>`).join("")}</ol>` : `<p>${r.tip}</p>`;
     const el = document.createElement("div");
     el.className = "tip";
-    el.innerHTML = `<div class="tip-head"><span class="badge">${i + 1}</span><b>${r.title}</b><span class="count">${r.reps}/${reps.length}</span></div>
-      <p>${r.detail}</p><p class="how"><b>So geht's:</b> ${r.tip}</p>`;
+    el.innerHTML = `<div class="tip-head"><span class="badge">${i + 1}</span><b>${r.title}</b><span class="count">${r.reps} von ${reps.length}</span></div>
+      <div class="tip-sec seen"><span class="tip-label">Das haben wir gesehen</span><p>${seen}${ex1 ? ` <small>(${activeEx.tennis ? "Schlag" : "Wdh."} ${ex1.index})</small>` : ""}</p></div>
+      ${r.why ? `<div class="tip-sec why"><span class="tip-label">Warum das wichtig ist</span><p>${r.why}</p></div>` : ""}
+      <div class="tip-sec how"><span class="tip-label">So korrigierst du es</span>${fix}</div>
+      ${r.drill ? `<div class="tip-sec drill"><span class="tip-label">Übung</span><p>${r.drill}</p></div>` : ""}`;
     tips.appendChild(el);
   });
   const note = ex.viewNote(view);

@@ -193,6 +193,16 @@ select { background: var(--surface-2); color: var(--text); border: 1px solid var
 .tip p { margin-top: 6px; color: var(--muted); font-size: .92rem; }
 .tip .how { color: var(--text); background: rgba(34, 211, 238, .07); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
 .tip-head { display: flex; gap: 10px; align-items: center; }
+.tip-sec { margin-top: 12px; }
+.tip-sec p { margin-top: 2px; }
+.tip-sec small { color: var(--muted); }
+.tip-label { display: block; font-size: .7rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.tip-sec.seen p { color: var(--text); }
+.tip-sec.how { background: rgba(34, 211, 238, .07); border-radius: 10px; padding: 10px 12px; }
+.tip-sec.how .tip-label { color: var(--accent); }
+.tip-sec.how ol { margin: 6px 0 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.tip-sec.drill .tip-label { color: var(--accent-2); }
+.tip .how { margin-top: 12px; }
 .tip-head b { font-size: 1.02rem; }
 .tip-head .count { margin-left: auto; color: var(--muted); font-size: .78rem; background: var(--surface-2); padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
 .badge { width: 24px; height: 24px; border-radius: 8px; background: var(--surface-2); display: grid; place-items: center; font-weight: 800; font-size: .8rem; flex: none; }
@@ -228,6 +238,10 @@ select { background: var(--surface-2); color: var(--text); border: 1px solid var
 .chip.active { background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .55); color: var(--accent); }
 .tennis-opts { display: grid; gap: 8px; margin-top: 10px; animation: fade .25s ease; }
 .segmented.three { grid-template-columns: repeat(3, 1fr); }
+.video-opts { padding: 4px 14px 12px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border); }
+.video-opts-title { display: block; font-size: .7rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-top: 10px; }
+.setting.compact { margin-top: 6px; padding-top: 10px; }
+.video-opts .setting.compact:first-of-type { border-top: none; }
 .segmented .seg { font-size: .9rem; }
 
 /* ---------- Konto ---------- */
