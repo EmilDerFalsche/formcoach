@@ -32,6 +32,7 @@
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></symbol>
     <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 19.5h16"/><path d="M7 16v-5M12 16V7M17 16v-8"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 5 3 3v2H7v-2l3-3z"/><path d="M12 14v6"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
   </svg>
 
@@ -62,10 +63,7 @@
       <p class="p-bio" id="p-bio">Technik-Analyse mit der Kamera – Videos bleiben auf deinem Gerät.<span class="sync-badge" id="history-source"></span></p>
     </section>
 
-    <!-- Übungen als Highlights: Antippen = Training mit dieser Übung -->
-    <div class="highlights" id="hl-row"></div>
-
-    <!-- Technik-Level je Übung -->
+    <!-- Übungen als Karten: Antippen = Training mit genau dieser Übung; Reihenfolge = zuletzt genutzt, Fokus vorne -->
     <div class="levels" id="level-row"></div>
 
     <div class="ptabs" role="tablist">
@@ -92,7 +90,7 @@
   <div class="sheet-backdrop" id="train-sheet" hidden>
     <div class="sheet" role="dialog" aria-label="Training starten">
       <div class="sheet-grab"></div>
-      <div class="sheet-head"><h2>Training starten</h2><button class="icon-btn sheet-close" aria-label="Schließen"><svg><use href="#i-close" /></svg></button></div>
+      <div class="sheet-head"><h2 id="train-title">Training starten</h2><button class="icon-btn sheet-close" aria-label="Schließen"><svg><use href="#i-close" /></svg></button></div>
       <div class="chips" id="ex-chips" role="radiogroup">
         <button class="chip active" data-ex="squat" role="radio">Kniebeuge</button>
         <button class="chip" data-ex="pushup" role="radio">Liegestütz</button>

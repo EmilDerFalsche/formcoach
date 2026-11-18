@@ -365,13 +365,13 @@ const PHOTOS = {
   tennis_serve: "AldB5IWh8l4",
   tennis_forehand: "n9RZ0dCunpY",
   tennis_backhand: "WqI-PbYugn4",
+  tennis: "n9RZ0dCunpY",
 };
 export const photoUrl = (exId, w = 400) => (PHOTOS[exId] ? `https://unsplash.com/photos/${PHOTOS[exId]}/download?w=${w}` : null);
-/** Reihenfolge der Übungen auf der Startseite (Highlights / Technik-Level) */
+/** Karten auf der Startseite: Tennis ist EINE Karte, die Schlagart wird erst beim Start gewählt */
 export const HOME_EXERCISES = [
-  { id: "squat", label: "Kniebeuge", sel: { exercise: "squat" } },
-  { id: "pushup", label: "Liegestütz", sel: { exercise: "pushup" } },
-  { id: "tennis_forehand", label: "Vorhand", sel: { exercise: "tennis", stroke: "forehand" } },
-  { id: "tennis_backhand", label: "Rückhand", sel: { exercise: "tennis", stroke: "backhand" } },
-  { id: "tennis_serve", label: "Aufschlag", sel: { exercise: "tennis", stroke: "serve" } },
+  { id: "squat", label: "Kniebeuge", ex: ["squat"], sel: { exercise: "squat" } },
+  { id: "pushup", label: "Liegestütz", ex: ["pushup"], sel: { exercise: "pushup" } },
+  { id: "tennis", label: "Tennis", ex: ["tennis_forehand", "tennis_backhand", "tennis_serve"], sel: { exercise: "tennis" } },
 ];
+export const groupOf = (exId) => HOME_EXERCISES.find((g) => g.ex.includes(exId))?.id ?? exId;

@@ -5,7 +5,7 @@ import { TENNIS_T } from "./tennisAnalyzer.js";
 import { SquatClassifier } from "./classifier.js";
 import { ML_LABEL_TEXT, Voice, repCue, summarize } from "./feedback.js";
 import { Cloud, uuid } from "./cloud.js";
-import { EXERCISES, exerciseOf, photoUrl, HOME_EXERCISES } from "./exercises.js";
+import { EXERCISES, exerciseOf, photoUrl, HOME_EXERCISES, groupOf } from "./exercises.js";
 import { FrameRing, saveSnaps, loadSnaps } from "./snapshots.js";
 
 const ring = new FrameRing(); // letzte Sekunden in kleiner Auflösung -> Standbilder im Schlüsselmoment
@@ -31,6 +31,7 @@ let videoInfo = null;             // Diagnose der Video-Analyse (für Export und
 
 // ---------- Übungsauswahl ----------
 const sel = { exercise: "squat", stroke: "serve", hand: "R" };
+let focusId = null; // angepinnte Übung (steht auf der Startseite immer vorne)
 const selectedEx = () => exerciseOf(sel.exercise === "tennis" ? `tennis_${sel.stroke}` : sel.exercise);
 
 function renderPicker() {
@@ -68,6 +69,7 @@ function loadSettings() {
     if ("ml2" in s) $("opt-ml").checked = s.ml2; // alter Schlüssel "ml" bewusst ignoriert (jetzt standardmäßig aus)
     if (s.model) $("opt-model").value = s.model;
     if (["squat", "pushup", "tennis"].includes(s.exercise)) sel.exercise = s.exercise;
+    if (["squat", "pushup", "tennis"].includes(s.focus)) focusId = s.focus;
     if (["serve", "forehand", "backhand"].includes(s.stroke)) sel.stroke = s.stroke;
     if (s.hand === "L" || s.hand === "R") sel.hand = s.hand;
     if (s.slowmo) $("opt-slowmo").value = s.slowmo;
@@ -80,7 +82,7 @@ function saveSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
       voice: $("opt-voice").checked, front: $("opt-front").checked,
       gesture: $("opt-gesture").checked, ml2: $("opt-ml").checked, model: $("opt-model").value,
-      exercise: sel.exercise, stroke: sel.stroke, hand: sel.hand,
+      exercise: sel.exercise, stroke: sel.stroke, hand: sel.hand, focus: focusId,
       slowmo: $("opt-slowmo").value, objects: $("opt-objects").checked, speed: $("opt-speed").value,
     }));
   } catch {}
@@ -648,37 +650,54 @@ async function renderHistory() {
       if (!sn?.cover) return;
       t.classList.remove("stock");
       bg(t, sn.cover);
-      if (!ownCovers[ex.id]) { ownCovers[ex.id] = sn.cover; renderHomeCards(); }
+      const g = groupOf(ex.id);
+      if (!ownCovers[g]) { ownCovers[g] = sn.cover; renderHomeCards(); }
     });
   });
   renderHomeCards();
   if (!$("home-progress").hidden) drawScoreChart($("home-chart"), scored.slice(0, 30).reverse());
 }
 
-/** Highlights + Technik-Level-Karten (Foto = eigenes Standbild, sonst Übungsfoto) */
-function renderHomeCards() {
-  const hl = $("hl-row"), lv = $("level-row");
-  hl.innerHTML = ""; lv.innerHTML = "";
-  for (const h of HOME_EXERCISES) {
-    const mine = ownCovers[h.id];
-    const b = document.createElement("button");
-    b.className = `hl ${mine ? "mine" : ""}`;
-    b.innerHTML = `<span class="c"><div></div></span>${h.label}`;
-    bg(b.querySelector("div"), mine ?? photoUrl(h.id, 160));
-    b.addEventListener("click", () => openTraining(h.sel));
-    hl.appendChild(b);
+/** Übungen in Anzeige-Reihenfolge: Fokus zuerst, dann zuletzt genutzt, dann ungenutzte. */
+function orderedGroups() {
+  const lastIdx = (g) => { const i = homeItems.findIndex((it) => g.ex.includes(it.exercise)); return i < 0 ? Infinity : i; };
+  return [...HOME_EXERCISES].sort((a, b) =>
+    (b.id === focusId) - (a.id === focusId) || lastIdx(a) - lastIdx(b) || HOME_EXERCISES.indexOf(a) - HOME_EXERCISES.indexOf(b));
+}
 
-    const sets = homeItems.filter((i) => i.exercise === h.id && typeof i.avg_score === "number");
-    const avg = (arr) => (arr.length ? Math.round(arr.reduce((s, i) => s + i.avg_score, 0) / arr.length) : null);
+/** Übungskarten (Foto = eigenes Standbild, sonst Übungsfoto) */
+function renderHomeCards() {
+  const lv = $("level-row");
+  lv.innerHTML = "";
+  const order = orderedGroups();
+  const avg = (arr) => (arr.length ? Math.round(arr.reduce((s, i) => s + i.avg_score, 0) / arr.length) : null);
+  for (const h of order) {
+    const sets = homeItems.filter((i) => h.ex.includes(i.exercise) && typeof i.avg_score === "number");
     const now = avg(sets.slice(0, 10)), before = avg(sets.slice(10, 20));
+    const last = homeItems.find((i) => h.ex.includes(i.exercise));
+    const sub = h.id === "tennis" && last ? `zuletzt ${exerciseOf(last.exercise).name.split("· ")[1]}` : sets.length ? `${sets.length}× trainiert` : "noch nicht trainiert";
+    const focused = focusId === h.id;
     const c = document.createElement("button");
-    c.className = `lvl ${now == null ? "empty" : ""}`;
-    bg(c, mine ?? photoUrl(h.id, 300));
+    c.className = `lvl ${now == null ? "empty" : ""} ${focused ? "focus" : ""}`;
+    bg(c, ownCovers[h.id] ?? photoUrl(last?.exercise ?? h.ex[0], 300) ?? photoUrl(h.id, 300));
     const trend = now != null && before != null && now !== before ? `<span class="trend ${now > before ? "up" : "down"}">${now > before ? "+" : ""}${now - before}</span>` : "";
-    c.innerHTML = `${trend}<div class="in"><b>${now ?? "Starten"}</b><span>${h.label}${sets.length ? ` · ${sets.length}×` : ""}</span><div class="meter"><i style="width:${now ?? 0}%"></i></div></div>`;
-    c.addEventListener("click", () => openTraining(h.sel));
+    c.innerHTML = `<span class="pin ${focused ? "on" : ""}" role="button" aria-label="${focused ? "Fokus entfernen" : "Als Fokus anpinnen"}"><svg><use href="#i-pin" /></svg></span>${trend}
+      <div class="in"><b>${now ?? "Start"}</b><span>${h.label}</span><span class="sub">${focused ? "Fokus · " : ""}${sub}</span><div class="meter"><i style="width:${now ?? 0}%"></i></div></div>`;
+    c.querySelector(".pin").addEventListener("click", (e) => {
+      e.stopPropagation();
+      focusId = focused ? null : h.id;
+      saveSettings();
+      renderHomeCards();
+      toast(focusId ? `${h.label} als Fokus angepinnt` : "Fokus entfernt");
+    });
+    // Tennis: mit der zuletzt genutzten Schlagart öffnen
+    const pre = h.id === "tennis" && last ? { ...h.sel, stroke: last.exercise.replace("tennis_", "") } : h.sel;
+    c.addEventListener("click", () => openTraining(pre, true));
     lv.appendChild(c);
   }
+  // Auch die Auswahl im "+ Training"-Fenster in dieser Reihenfolge
+  const chips = $("ex-chips");
+  order.forEach((g) => { const b = chips.querySelector(`[data-ex="${g.id}"]`); if (b) chips.appendChild(b); });
 }
 
 function drawScoreChart(c, items) {
@@ -718,12 +737,23 @@ function openSheet(id) { $(id).hidden = false; }
 function closeSheets() { document.querySelectorAll(".sheet-backdrop").forEach((s) => (s.hidden = true)); }
 document.querySelectorAll(".sheet-backdrop").forEach((bd) => bd.addEventListener("click", (e) => { if (e.target === bd) closeSheets(); }));
 document.querySelectorAll(".sheet-close").forEach((b) => b.addEventListener("click", closeSheets));
-/** Training-Sheet öffnen, optional mit vorausgewählter Übung */
-function openTraining(pre) {
+/**
+ * Training-Sheet öffnen.
+ * @param {object} [pre] vorausgewählte Übung
+ * @param {boolean} [locked] nur diese Übung zeigen (von einer Karte aus) – keine zweite Übungsauswahl
+ */
+function openTraining(pre, locked = false) {
   if (pre) { Object.assign(sel, pre); renderPicker(); saveSettings(); }
+  $("ex-chips").hidden = locked;
+  const g = HOME_EXERCISES.find((x) => x.id === sel.exercise);
+  $("train-title").textContent = locked && g ? g.label : "Training starten";
   openSheet("train-sheet");
 }
-$("btn-train").addEventListener("click", () => openTraining());
+$("btn-train").addEventListener("click", () => {
+  // "+ Training": zuletzt genutzte bzw. angepinnte Übung vorauswählen, Auswahl bleibt möglich
+  const first = orderedGroups()[0];
+  openTraining(homeItems.length || focusId ? first.sel : null, false);
+});
 $("btn-settings").addEventListener("click", () => openSheet("settings-sheet"));
 $("btn-live").addEventListener("click", closeSheets);
 $("file-input").addEventListener("change", closeSheets);
