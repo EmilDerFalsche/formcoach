@@ -5,7 +5,10 @@ import { TENNIS_T } from "./tennisAnalyzer.js";
 import { SquatClassifier } from "./classifier.js";
 import { ML_LABEL_TEXT, Voice, repCue, summarize } from "./feedback.js";
 import { Cloud, uuid } from "./cloud.js";
-import { EXERCISES, exerciseOf } from "./exercises.js";
+import { EXERCISES, exerciseOf, photoUrl, HOME_EXERCISES } from "./exercises.js";
+import { FrameRing, saveSnaps, loadSnaps } from "./snapshots.js";
+
+const ring = new FrameRing(); // letzte Sekunden in kleiner Auflösung -> Standbilder im Schlüsselmoment
 
 const cloud = new Cloud();
 
@@ -50,6 +53,7 @@ document.querySelectorAll("#hand-seg .seg").forEach((b) => b.addEventListener("c
 // ---------- Navigation ----------
 function show(id) {
   document.querySelectorAll(".screen").forEach((s) => s.classList.toggle("active", s.id === id));
+  document.body.classList.toggle("on-home", id === "screen-home");
   window.scrollTo(0, 0);
 }
 
@@ -85,6 +89,7 @@ function saveSettings() {
 
 // ---------- Setup ----------
 async function prepare() {
+  ring.reset();
   $("loading").hidden = false;
   $("loading-text").textContent = "Lade KI-Modell …";
   voice.enabled = $("opt-voice").checked;
@@ -334,6 +339,7 @@ async function startVideo(file) {
 function processFrame(t, { objects = false, progress = null } = {}) {
   const aspect = video.videoWidth / video.videoHeight;
   const lm = detect(video);
+  try { ring.push(t, video, lm, $("stage").classList.contains("mirror")); } catch (e) { /* Standbild ist optional */ }
   const objs = objects ? detectObjects(video) : null;
   if (objects && videoInfo) {
     videoInfo.objects.framesRun++;
@@ -380,6 +386,11 @@ function onEvent(type, info) {
 
 function onRep(rep) {
   const ex = activeEx;
+  // Standbild im Schlüsselmoment (tiefster Punkt / Treffpunkt), fehlerhafte Gelenke rot markiert
+  try {
+    const joints = rep.issues.flatMap((i) => ex.joints[i.key] ?? []);
+    rep.snapshot = ring.snapshotAt(rep.keyT ?? rep.end, joints, !rep.issues.length) ?? undefined;
+  } catch (e) { console.warn("Standbild fehlgeschlagen", e); }
   $("hud-reps").textContent = rep.index;
   const fb = $("hud-feedback");
   if (rep.issues.length) {
@@ -419,13 +430,24 @@ function finish() {
     date: new Date().toISOString(), mode, view,
     baseline: analyzer.base, thresholds, discarded: analyzer.discarded, discardedSwings: analyzer.discardedSwings,
     video: mode === "video" ? videoInfo : undefined,
-    reps: reps.map(({ ml, ...r }) => ({ ...r, ml: ml ? { label: ml.label, confidence: ml.confidence } : null })),
+    reps: reps.map(({ ml, snapshot, ...r }) => ({ ...r, ml: ml ? { label: ml.label, confidence: ml.confidence } : null })),
     trace: trace.map((p) => ({ t: Math.round(p.t), d: Math.round(p.d * 1000) / 1000 })),
   };
   renderResult(reps, sum, trace, view, ex);
   $("btn-export").hidden = false;
   $("res-saved").hidden = true;
-  if (reps.length) saveWorkout(buildWorkout(reps, sum, trace, view, ex));
+  if (reps.length) {
+    const row = buildWorkout(reps, sum, trace, view, ex);
+    // Standbilder nur lokal speichern (nie hochladen). Titelbild: die Wiederholung mit dem deutlichsten Fehler,
+    // bei fehlerfreien Sätzen die mittlere.
+    const withSnap = reps.filter((r) => r.snapshot);
+    if (withSnap.length) {
+      const worst = [...withSnap].sort((a, b) => a.score - b.score)[0];
+      const cover = worst.score < 100 ? worst.snapshot : withSnap[Math.floor(withSnap.length / 2)].snapshot;
+      saveSnaps(row.client_id, { cover, reps: Object.fromEntries(withSnap.map((r) => [r.index, r.snapshot])) });
+    }
+    saveWorkout(row);
+  }
   if ($("opt-voice").checked && reps.length) {
     voice.enabled = true;
     voice.say(`${reps.length} ${reps.length === 1 ? ex.unit.one : ex.unit.many}. Durchschnitt ${sum.avgScore} Punkte. ${sum.ranked[0] ? "Fokus: " + sum.ranked[0].title : "Sehr sauber!"}`, { force: true });
@@ -456,7 +478,7 @@ function renderResult(reps, sum, trace, view, ex = activeEx) {
     const el = document.createElement("div");
     el.className = "tip";
     el.innerHTML = `<div class="tip-head"><span class="badge">${i + 1}</span><b>${r.title}</b><span class="count">${r.reps} von ${reps.length}</span></div>
-      <div class="tip-sec seen"><span class="tip-label">Das haben wir gesehen</span><p>${seen}${ex1 ? ` <small>(${activeEx.tennis ? "Schlag" : "Wdh."} ${ex1.index})</small>` : ""}</p></div>
+      <div class="tip-sec seen"><span class="tip-label">Das haben wir gesehen</span>${ex1?.snapshot ? `<img class="tip-snap" src="${ex1.snapshot}" alt="Standbild ${activeEx.tennis ? "Schlag" : "Wdh."} ${ex1.index}" />` : ""}<p>${seen}${ex1 ? ` <small>(${activeEx.tennis ? "Schlag" : "Wdh."} ${ex1.index})</small>` : ""}</p></div>
       ${r.why ? `<div class="tip-sec why"><span class="tip-label">Warum das wichtig ist</span><p>${r.why}</p></div>` : ""}
       <div class="tip-sec how"><span class="tip-label">So korrigierst du es</span>${fix}</div>
       ${r.drill ? `<div class="tip-sec drill"><span class="tip-label">Übung</span><p>${r.drill}</p></div>` : ""}`;
@@ -484,7 +506,8 @@ function renderResult(reps, sum, trace, view, ex = activeEx) {
     const issueText = r.issues.length ? r.issues.map((i) => `${ex.issues[i.key]?.title ?? i.key}${i.severity === "major" ? " (deutlich)" : ""}`).join(", ") : "Keine Fehler";
     const ml = r.ml ? `<li>KI-Einschätzung: <b>${ML_LABEL_TEXT[r.ml.label]}</b> (${Math.round(r.ml.confidence * 100)} %)</li>` : "";
     const lines = ex.metricLines(r, view).filter(Boolean).map((l) => `<li>${l}</li>`).join("");
-    el.innerHTML = `<summary><span class="rep-score ${cls}">${r.score}</span><span>${label} ${r.index}</span><small>${issueText}</small></summary>
+    el.innerHTML = `<summary>${r.snapshot ? `<img class="rep-thumb" src="${r.snapshot}" alt="" />` : ""}<span class="rep-score ${cls}">${r.score}</span><span>${label} ${r.index}</span><small>${issueText}</small></summary>
+      ${r.snapshot ? `<img class="rep-snap" src="${r.snapshot}" alt="Standbild ${label} ${r.index}" />` : ""}
       <ul class="metrics">${lines}${ml}</ul>`;
     list.appendChild(el);
   });
@@ -507,7 +530,7 @@ function drawChart(trace, reps, cfg = activeEx.chart) {
   const Y = (d) => h - 8 * devicePixelRatio - (Math.max(-0.1, Math.min(maxD, d)) / maxD) * (h - 16 * devicePixelRatio);
   // Wiederholungs-/Schlag-Bereiche einfärben
   reps.forEach((r) => {
-    g.fillStyle = r.issues.length ? "rgba(251,113,133,0.24)" : "rgba(52,211,153,0.24)";
+    g.fillStyle = r.issues.length ? "rgba(240,82,82,0.2)" : "rgba(59,130,246,0.18)";
     const x0 = X(r.start), x1 = X(r.end), rad = 6 * devicePixelRatio;
     g.beginPath();
     if (g.roundRect) g.roundRect(x0, 0, x1 - x0, h, rad); else g.rect(x0, 0, x1 - x0, h);
@@ -516,7 +539,7 @@ function drawChart(trace, reps, cfg = activeEx.chart) {
   g.setLineDash([6 * devicePixelRatio, 6 * devicePixelRatio]); g.strokeStyle = "rgba(148,163,184,0.6)"; g.lineWidth = devicePixelRatio;
   g.beginPath(); g.moveTo(0, Y(cfg.ref)); g.lineTo(w, Y(cfg.ref)); g.stroke(); g.setLineDash([]);
   const grad = g.createLinearGradient(0, 0, w, 0);
-  grad.addColorStop(0, "#22d3ee"); grad.addColorStop(1, "#818cf8");
+  grad.addColorStop(0, "#3b82f6"); grad.addColorStop(1, "#3b82f6");
   g.strokeStyle = grad; g.lineWidth = 2.5 * devicePixelRatio; g.lineJoin = "round";
   g.beginPath();
   trace.forEach((p, i) => (i ? g.lineTo(X(p.t), Y(p.d)) : g.moveTo(X(p.t), Y(p.d))));
@@ -578,34 +601,138 @@ const fmtDate = (iso) => {
   return `${d.toLocaleDateString("de-DE")} ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`;
 };
 
+// ---------- Startseite (Profil) ----------
+let homeItems = [];
+const bg = (el, url) => { if (url) el.style.backgroundImage = `url("${url}")`; };
+/** Neuestes eigenes Standbild je Übung (für Highlights / Level-Karten) */
+const ownCovers = {};
+
 async function renderHistory() {
   let res;
   try { res = await cloud.listWorkouts(); } catch (e) { console.warn(e); return; }
   const { source, items } = res;
-  const ul = $("history");
-  $("history-panel").hidden = !items.length && !cloud.loggedIn;
+  homeItems = items;
   const badge = $("history-source");
   badge.className = `sync-badge ${source === "cloud" ? "cloud" : ""}`;
-  badge.textContent = source === "cloud" ? "☁ synchronisiert" : source === "cache" ? "offline" : cloud.enabled ? "nur dieses Gerät" : "";
-  $("history-hint").hidden = items.length > 0;
-  $("history-hint").textContent = "Noch keine Sätze in deinem Konto – leg los!";
-  ul.innerHTML = "";
-  items.slice(0, 15).forEach((e) => {
-    const li = document.createElement("li");
-    const ex = exerciseOf(e.exercise);
-    const focus = ex.issues[e.top_issue]?.title ?? e.top_issue_title;
-    const hasDetail = Array.isArray(e.reps) && e.reps.length > 0;
-    li.className = hasDetail ? "" : "no-detail";
-    li.innerHTML = `<span class="h-score ${scoreClass(e.avg_score ?? 0)}">${e.avg_score ?? "–"}</span><span><b>${ex.name}</b> · ${e.rep_count} ${ex.unit.short} · ${e.mode === "video" ? "Video" : "Live"}${e.pending ? '<i class="pending-dot" title="Noch nicht hochgeladen"></i>' : ""}<small>${fmtDate(e.performed_at)}${focus ? " · Fokus: " + focus : ""}</small></span>`;
-    if (hasDetail) li.addEventListener("click", () => openWorkout(e));
-    ul.appendChild(li);
+  badge.textContent = source === "cloud" ? "☁ synchronisiert" : source === "cache" ? "offline" : cloud.enabled && items.length ? "nur auf diesem Gerät gespeichert" : "";
+
+  // Profilkopf
+  const scored = items.filter((i) => typeof i.avg_score === "number");
+  $("ps-sets").textContent = items.length;
+  $("ps-reps").textContent = items.reduce((s, i) => s + (i.rep_count || 0), 0);
+  const last10 = scored.slice(0, 10);
+  $("ps-score").textContent = last10.length ? Math.round(last10.reduce((s, i) => s + i.avg_score, 0) / last10.length) : "–";
+  const email = cloud.user?.email;
+  $("p-avatar").textContent = email ? email[0].toUpperCase() : "F";
+  $("p-name").textContent = email ? email.split("@")[0] : "Dein Training";
+
+  // Raster
+  const grid = $("home-grid");
+  grid.innerHTML = "";
+  $("home-empty").hidden = items.length > 0;
+  for (const k of Object.keys(ownCovers)) delete ownCovers[k];
+  items.slice(0, 60).forEach((it) => {
+    const ex = exerciseOf(it.exercise);
+    const hasDetail = Array.isArray(it.reps) && it.reps.length > 0;
+    const t = document.createElement("button");
+    t.className = "tile stock";
+    bg(t, photoUrl(ex.id, 300));
+    const d = new Date(it.performed_at);
+    const when = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+    t.innerHTML = `${it.pending ? '<span class="pending" title="Noch nicht hochgeladen"></span>' : ""}<span class="score ${scoreClass(it.avg_score ?? 0)}">${it.avg_score ?? "–"}</span>
+      <span class="lbl"><b>${ex.name.replace("Tennis · ", "")}</b>${when} · ${it.rep_count} ${ex.unit.short}</span>`;
+    if (hasDetail) t.addEventListener("click", () => openWorkout(it));
+    grid.appendChild(t);
+    // eigenes Standbild nachladen
+    loadSnaps(it.client_id).then((sn) => {
+      if (!sn?.cover) return;
+      t.classList.remove("stock");
+      bg(t, sn.cover);
+      if (!ownCovers[ex.id]) { ownCovers[ex.id] = sn.cover; renderHomeCards(); }
+    });
+  });
+  renderHomeCards();
+  if (!$("home-progress").hidden) drawScoreChart($("home-chart"), scored.slice(0, 30).reverse());
+}
+
+/** Highlights + Technik-Level-Karten (Foto = eigenes Standbild, sonst Übungsfoto) */
+function renderHomeCards() {
+  const hl = $("hl-row"), lv = $("level-row");
+  hl.innerHTML = ""; lv.innerHTML = "";
+  for (const h of HOME_EXERCISES) {
+    const mine = ownCovers[h.id];
+    const b = document.createElement("button");
+    b.className = `hl ${mine ? "mine" : ""}`;
+    b.innerHTML = `<span class="c"><div></div></span>${h.label}`;
+    bg(b.querySelector("div"), mine ?? photoUrl(h.id, 160));
+    b.addEventListener("click", () => openTraining(h.sel));
+    hl.appendChild(b);
+
+    const sets = homeItems.filter((i) => i.exercise === h.id && typeof i.avg_score === "number");
+    const avg = (arr) => (arr.length ? Math.round(arr.reduce((s, i) => s + i.avg_score, 0) / arr.length) : null);
+    const now = avg(sets.slice(0, 10)), before = avg(sets.slice(10, 20));
+    const c = document.createElement("button");
+    c.className = `lvl ${now == null ? "empty" : ""}`;
+    bg(c, mine ?? photoUrl(h.id, 300));
+    const trend = now != null && before != null && now !== before ? `<span class="trend ${now > before ? "up" : "down"}">${now > before ? "+" : ""}${now - before}</span>` : "";
+    c.innerHTML = `${trend}<div class="in"><b>${now ?? "Starten"}</b><span>${h.label}${sets.length ? ` · ${sets.length}×` : ""}</span><div class="meter"><i style="width:${now ?? 0}%"></i></div></div>`;
+    c.addEventListener("click", () => openTraining(h.sel));
+    lv.appendChild(c);
+  }
+}
+
+function drawScoreChart(c, items) {
+  const dpr = devicePixelRatio;
+  const w = (c.width = (c.clientWidth || 320) * dpr), h = (c.height = 170 * dpr);
+  const g = c.getContext("2d");
+  g.clearRect(0, 0, w, h);
+  if (items.length < 2) return;
+  const pad = 10 * dpr;
+  const X = (i) => pad + (i / (items.length - 1)) * (w - 2 * pad);
+  const Y = (s) => h - pad - (s / 100) * (h - 2 * pad);
+  g.strokeStyle = "rgba(139,139,147,0.3)"; g.lineWidth = dpr; g.setLineDash([4 * dpr, 4 * dpr]);
+  [60, 85].forEach((s) => { g.beginPath(); g.moveTo(0, Y(s)); g.lineTo(w, Y(s)); g.stroke(); });
+  g.setLineDash([]);
+  g.strokeStyle = "#3b82f6"; g.lineWidth = 2.5 * dpr; g.lineJoin = "round";
+  g.beginPath();
+  items.forEach((it, i) => (i ? g.lineTo(X(i), Y(it.avg_score)) : g.moveTo(X(i), Y(it.avg_score))));
+  g.stroke();
+  items.forEach((it, i) => {
+    g.fillStyle = it.avg_score >= 85 ? "#3fb950" : it.avg_score >= 60 ? "#d29922" : "#f05252";
+    g.beginPath(); g.arc(X(i), Y(it.avg_score), 3.5 * dpr, 0, Math.PI * 2); g.fill();
   });
 }
 
+// Tabs Raster / Fortschritt
+document.querySelectorAll(".ptabs button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll(".ptabs button").forEach((x) => x.classList.toggle("on", x === b));
+  const chart = b.dataset.tab === "chart";
+  $("home-grid").hidden = chart;
+  $("home-empty").hidden = chart || homeItems.length > 0;
+  $("home-progress").hidden = !chart;
+  if (chart) drawScoreChart($("home-chart"), homeItems.filter((i) => typeof i.avg_score === "number").slice(0, 30).reverse());
+}));
+
+// ---------- Sheets ----------
+function openSheet(id) { $(id).hidden = false; }
+function closeSheets() { document.querySelectorAll(".sheet-backdrop").forEach((s) => (s.hidden = true)); }
+document.querySelectorAll(".sheet-backdrop").forEach((bd) => bd.addEventListener("click", (e) => { if (e.target === bd) closeSheets(); }));
+document.querySelectorAll(".sheet-close").forEach((b) => b.addEventListener("click", closeSheets));
+/** Training-Sheet öffnen, optional mit vorausgewählter Übung */
+function openTraining(pre) {
+  if (pre) { Object.assign(sel, pre); renderPicker(); saveSettings(); }
+  openSheet("train-sheet");
+}
+$("btn-train").addEventListener("click", () => openTraining());
+$("btn-settings").addEventListener("click", () => openSheet("settings-sheet"));
+$("btn-live").addEventListener("click", closeSheets);
+$("file-input").addEventListener("change", closeSheets);
+
 /** Gespeicherten Satz in der Ergebnisansicht öffnen. */
-function openWorkout(w) {
+async function openWorkout(w) {
   videoInfo = null; // Diagnose gilt nur für die gerade analysierte Aufnahme
-  const reps = w.reps.map((r) => ({ ...r, issues: r.issues ?? [], metrics: r.metrics ?? {} }));
+  const snaps = await loadSnaps(w.client_id);
+  const reps = w.reps.map((r) => ({ ...r, issues: r.issues ?? [], metrics: r.metrics ?? {}, snapshot: snaps?.reps?.[r.index] }));
   const ex = exerciseOf(w.exercise);
   renderResult(reps, summarize(reps, ex.issues, ex.unit), w.trace ?? [], w.view, ex);
   $("res-title").textContent = `${ex.name} · ${fmtDate(w.performed_at)} · ${w.rep_count} ${ex.unit.short}`;
@@ -682,7 +809,7 @@ function drawProgress(items) {
   [50, 85].forEach((s) => { g.beginPath(); g.moveTo(0, Y(s)); g.lineTo(w, Y(s)); g.stroke(); });
   g.setLineDash([]);
   const grad = g.createLinearGradient(0, 0, w, 0);
-  grad.addColorStop(0, "#22d3ee"); grad.addColorStop(1, "#818cf8");
+  grad.addColorStop(0, "#3b82f6"); grad.addColorStop(1, "#3b82f6");
   g.strokeStyle = grad; g.lineWidth = 2.5 * dpr; g.lineJoin = "round";
   g.beginPath();
   items.forEach((it, i) => (i ? g.lineTo(X(i), Y(it.avg_score)) : g.moveTo(X(i), Y(it.avg_score))));
@@ -817,6 +944,7 @@ $("btn-export").addEventListener("click", async () => {
 $("btn-again").addEventListener("click", () => (mode === "video" ? $("file-input").click() : startLive()));
 $("btn-home").addEventListener("click", () => show("screen-home"));
 
+document.body.classList.add("on-home");
 loadSettings();
 renderPicker();
 updateAccountButton();

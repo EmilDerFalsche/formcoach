@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#070b14" />
+  <meta name="theme-color" content="#000000" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>FormCoach – Technik-Analyse</title>
@@ -29,87 +29,121 @@
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a5 5 0 1 1 .9-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 7.9H7Z"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 19.5h16"/><path d="M7 16v-5M12 16V7M17 16v-8"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
   </svg>
 
   <!-- Startseite -->
-  <section id="screen-home" class="screen active">
-    <header class="topbar">
-      <img src="icon.svg" alt="" class="logo" />
-      <span class="brand">FormCoach</span>
-      <button class="acc-btn" id="btn-account" hidden>
-        <span class="acc-avatar" id="acc-avatar"><svg><use href="#i-user" /></svg></span>
-        <span id="acc-label">Anmelden</span>
-      </button>
+  <section id="screen-home" class="screen active home">
+    <header class="topbar home-top">
+      <span class="handle"><span class="brand-dot"></span>FormCoach</span>
+      <div class="top-actions">
+        <button class="acc-btn" id="btn-account" hidden>
+          <span class="acc-avatar" id="acc-avatar"><svg><use href="#i-user" /></svg></span>
+          <span id="acc-label">Anmelden</span>
+        </button>
+        <button class="icon-btn" id="btn-settings" aria-label="Einstellungen"><svg><use href="#i-gear" /></svg></button>
+      </div>
     </header>
 
-    <div class="hero">
-      <h1>Bessere Technik.<br /><span class="grad">Mit deiner Kamera.</span></h1>
-      <p class="sub">FormCoach analysiert Kniebeugen, Liegestütze und Tennisschläge und sagt dir, was du verbessern kannst. Videos bleiben auf deinem Gerät.</p>
-    </div>
-
-    <h2 class="section-title">Übung</h2>
-    <div class="chips" id="ex-chips" role="radiogroup">
-      <button class="chip active" data-ex="squat" role="radio">Kniebeuge</button>
-      <button class="chip" data-ex="pushup" role="radio">Liegestütz</button>
-      <button class="chip" data-ex="tennis" role="radio">Tennis</button>
-    </div>
-    <div class="tennis-opts" id="tennis-opts" hidden>
-      <div class="opt-group segmented three" id="stroke-seg">
-        <button class="seg active" data-stroke="serve">Aufschlag</button>
-        <button class="seg" data-stroke="forehand">Vorhand</button>
-        <button class="seg" data-stroke="backhand">Rückhand</button>
+    <!-- Profilkopf -->
+    <section class="profile">
+      <div class="p-row">
+        <div class="p-avatar"><div id="p-avatar">F</div></div>
+        <div class="p-stats">
+          <div><b id="ps-sets">0</b><span>Einheiten</span></div>
+          <div><b id="ps-reps">0</b><span>Wdh.</span></div>
+          <div><b id="ps-score">–</b><span>Ø Score</span></div>
+        </div>
       </div>
-      <div class="opt-group segmented" id="hand-seg">
-        <button class="seg active" data-hand="R">Rechtshänder</button>
-        <button class="seg" data-hand="L">Linkshänder</button>
-      </div>
-      <div class="video-opts">
-        <span class="video-opts-title">Für „Video analysieren“</span>
-        <label class="setting compact"><span>Zeitlupe<small>Wie stark ist das Video verlangsamt?</small></span>
-          <select id="opt-slowmo">
-            <option value="1">Normal</option>
-            <option value="2">2× langsamer</option>
-            <option value="4">4× langsamer</option>
-            <option value="8">8× langsamer</option>
-          </select>
-        </label>
-        <label class="setting compact"><span>Analyse-Tempo<small>Schnell: grober, Genau: mehr Bilder pro Schlag</small></span>
-          <select id="opt-speed">
-            <option value="fast">Schnell</option>
-            <option value="balanced" selected>Ausgewogen</option>
-            <option value="precise">Genau</option>
-          </select>
-        </label>
-        <label class="setting compact"><span>Schläger &amp; Ball erkennen<small>Genauerer Treffpunkt, Topspin- und Ballwurf-Analyse (experimentell, dauert länger)</small></span><input type="checkbox" class="switch" id="opt-objects" checked /></label>
-      </div>
-    </div>
-
-    <div class="cards" style="margin-top:14px">
-      <button class="card primary" id="btn-live">
-        <span class="card-icon"><svg><use href="#i-camera" /></svg></span>
-        <span class="card-text"><strong>Live-Training</strong><small>Feedback in Echtzeit, mit Sprachausgabe</small></span>
-        <svg class="chev"><use href="#i-arrow" /></svg>
-      </button>
-      <label class="card" id="btn-upload">
-        <span class="card-icon"><svg><use href="#i-upload" /></svg></span>
-        <span class="card-text"><strong>Video analysieren</strong><small>Aufgenommenen Satz auswerten</small></span>
-        <svg class="chev"><use href="#i-arrow" /></svg>
-        <input type="file" id="file-input" accept="video/*" hidden />
-      </label>
-    </div>
-
-    <h2 class="section-title">So filmst du richtig</h2>
-    <div class="steps" id="howto-steps"><!-- wird je nach Übung befüllt --></div>
-
-    <section class="panel" id="history-panel" hidden>
-      <h2 class="panel-title"><svg><use href="#i-history" /></svg>Verlauf<span class="sync-badge" id="history-source"></span></h2>
-      <ul id="history" class="history"></ul>
-      <p class="hint" id="history-hint" hidden></p>
+      <p class="p-name" id="p-name">Dein Training</p>
+      <p class="p-bio" id="p-bio">Technik-Analyse mit der Kamera – Videos bleiben auf deinem Gerät.<span class="sync-badge" id="history-source"></span></p>
     </section>
 
-    <details class="panel settings">
-      <summary class="panel-title"><svg><use href="#i-gear" /></svg>Einstellungen<svg class="chev"><use href="#i-arrow" /></svg></summary>
+    <!-- Übungen als Highlights: Antippen = Training mit dieser Übung -->
+    <div class="highlights" id="hl-row"></div>
+
+    <!-- Technik-Level je Übung -->
+    <div class="levels" id="level-row"></div>
+
+    <div class="ptabs" role="tablist">
+      <button class="on" data-tab="grid" aria-label="Einheiten"><svg><use href="#i-grid" /></svg></button>
+      <button data-tab="chart" aria-label="Fortschritt"><svg><use href="#i-chart" /></svg></button>
+    </div>
+    <div class="set-grid" id="home-grid"></div>
+    <div class="empty-state" id="home-empty" hidden>
+      <svg><use href="#i-camera" /></svg>
+      <b>Noch keine Einheiten</b>
+      <p>Tippe auf „Training“, analysiere einen Satz – hier erscheint dann ein Standbild davon.</p>
+    </div>
+    <section class="home-progress" id="home-progress" hidden>
+      <canvas id="home-chart" height="170"></canvas>
+      <p class="hint">Ø Score pro Satz (letzte 30) – je höher, desto sauberer.</p>
+    </section>
+
+    <p class="footnote">Übungsfotos: Unsplash · Standbilder deiner Sätze bleiben auf deinem Gerät</p>
+  </section>
+
+  <button class="fab" id="btn-train"><svg><use href="#i-plus" /></svg>Training</button>
+
+  <!-- Sheet: Training starten -->
+  <div class="sheet-backdrop" id="train-sheet" hidden>
+    <div class="sheet" role="dialog" aria-label="Training starten">
+      <div class="sheet-grab"></div>
+      <div class="sheet-head"><h2>Training starten</h2><button class="icon-btn sheet-close" aria-label="Schließen"><svg><use href="#i-close" /></svg></button></div>
+      <div class="chips" id="ex-chips" role="radiogroup">
+        <button class="chip active" data-ex="squat" role="radio">Kniebeuge</button>
+        <button class="chip" data-ex="pushup" role="radio">Liegestütz</button>
+        <button class="chip" data-ex="tennis" role="radio">Tennis</button>
+      </div>
+      <div class="tennis-opts" id="tennis-opts" hidden>
+        <div class="opt-group segmented three" id="stroke-seg">
+          <button class="seg active" data-stroke="serve">Aufschlag</button>
+          <button class="seg" data-stroke="forehand">Vorhand</button>
+          <button class="seg" data-stroke="backhand">Rückhand</button>
+        </div>
+        <div class="opt-group segmented" id="hand-seg">
+          <button class="seg active" data-hand="R">Rechtshänder</button>
+          <button class="seg" data-hand="L">Linkshänder</button>
+        </div>
+        <div class="video-opts">
+          <span class="video-opts-title">Für „Video analysieren“</span>
+          <label class="setting compact"><span>Zeitlupe<small>Wie stark ist das Video verlangsamt?</small></span>
+            <select id="opt-slowmo">
+              <option value="1">Normal</option>
+              <option value="2">2× langsamer</option>
+              <option value="4">4× langsamer</option>
+              <option value="8">8× langsamer</option>
+            </select>
+          </label>
+          <label class="setting compact"><span>Analyse-Tempo<small>Schnell: grober, Genau: mehr Bilder pro Schlag</small></span>
+            <select id="opt-speed">
+              <option value="fast">Schnell</option>
+              <option value="balanced" selected>Ausgewogen</option>
+              <option value="precise">Genau</option>
+            </select>
+          </label>
+          <label class="setting compact"><span>Schläger &amp; Ball erkennen<small>Genauerer Treffpunkt, Topspin- und Ballwurf-Analyse (experimentell, dauert länger)</small></span><input type="checkbox" class="switch" id="opt-objects" checked /></label>
+        </div>
+      </div>
+      <div class="start-btns">
+        <button class="btn primary" id="btn-live"><svg><use href="#i-camera" /></svg>Live</button>
+        <label class="btn ghost" id="btn-upload"><svg><use href="#i-upload" /></svg>Video
+          <input type="file" id="file-input" accept="video/*" hidden />
+        </label>
+      </div>
+      <h3 class="section-title">So filmst du richtig</h3>
+      <div class="steps" id="howto-steps"><!-- wird je nach Übung befüllt --></div>
+    </div>
+  </div>
+
+  <!-- Sheet: Einstellungen -->
+  <div class="sheet-backdrop" id="settings-sheet" hidden>
+    <div class="sheet" role="dialog" aria-label="Einstellungen">
+      <div class="sheet-grab"></div>
+      <div class="sheet-head"><h2>Einstellungen</h2><button class="icon-btn sheet-close" aria-label="Schließen"><svg><use href="#i-close" /></svg></button></div>
       <label class="setting"><span>Sprach-Feedback<small>Hinweise nach jeder Wiederholung vorlesen</small></span><input type="checkbox" class="switch" id="opt-voice" checked /></label>
       <label class="setting"><span>Start &amp; Stopp per Handzeichen<small>Hand über den Kopf heben startet und beendet den Satz</small></span><input type="checkbox" class="switch" id="opt-gesture" checked /></label>
       <label class="setting"><span>Frontkamera<small>Selfie-Kamera statt Rückkamera</small></span><input type="checkbox" class="switch" id="opt-front" /></label>
@@ -117,10 +151,9 @@
       <label class="setting"><span>Pose-Modell<small>„Genau“ braucht mehr Rechenleistung</small></span>
         <select id="opt-model"><option value="full">Genau</option><option value="lite">Schnell</option></select>
       </label>
-    </details>
-
-    <p class="footnote">Pose-Erkennung mit MediaPipe · läuft komplett auf dem Gerät</p>
-  </section>
+      <p class="footnote">Pose-Erkennung mit MediaPipe · läuft komplett auf dem Gerät</p>
+    </div>
+  </div>
 
   <!-- Konto -->
   <section id="screen-account" class="screen">

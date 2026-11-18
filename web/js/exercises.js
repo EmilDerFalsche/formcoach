@@ -357,3 +357,21 @@ Object.assign(PUSHUP_ISSUES.too_fast, {
   seen: (m) => `Du hast dich in ${m.descentSec.toFixed(1)} s abgesenkt. Ziel: 1–2 s.`,
   why: "Fallenlassen belastet die Schultern und verschenkt Trainingsreiz.",
 });
+
+// ---------- Übungsfotos (Unsplash-Lizenz) – nur als Platzhalter, solange es keine eigenen Standbilder gibt ----------
+const PHOTOS = {
+  squat: "fTbktIYS6sg",
+  pushup: "P3wsv-msSgw",
+  tennis_serve: "AldB5IWh8l4",
+  tennis_forehand: "n9RZ0dCunpY",
+  tennis_backhand: "WqI-PbYugn4",
+};
+export const photoUrl = (exId, w = 400) => (PHOTOS[exId] ? `https://unsplash.com/photos/${PHOTOS[exId]}/download?w=${w}` : null);
+/** Reihenfolge der Übungen auf der Startseite (Highlights / Technik-Level) */
+export const HOME_EXERCISES = [
+  { id: "squat", label: "Kniebeuge", sel: { exercise: "squat" } },
+  { id: "pushup", label: "Liegestütz", sel: { exercise: "pushup" } },
+  { id: "tennis_forehand", label: "Vorhand", sel: { exercise: "tennis", stroke: "forehand" } },
+  { id: "tennis_backhand", label: "Rückhand", sel: { exercise: "tennis", stroke: "backhand" } },
+  { id: "tennis_serve", label: "Aufschlag", sel: { exercise: "tennis", stroke: "serve" } },
+];

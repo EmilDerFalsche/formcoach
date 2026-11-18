@@ -312,6 +312,7 @@ export class TennisAnalyzer {
       ballSeen: swingWin.length ? ballFrames / swingWin.length : 0,
     };
     const hasRacket = racketFrames >= O.minDetections;
+    let keyFrame = null; // Treffpunkt -> Standbild
 
     if (this.stroke === "serve") {
       const S = T.serve;
@@ -320,6 +321,7 @@ export class TennisAnalyzer {
       const contact = byBall?.contactSource === "ball" ? byBall
         : around.reduce((a, b) => ((b.nose.y - b.dw.y) / b.torso > (a.nose.y - a.dw.y) / a.torso ? b : a));
       m.contactSource = contact.contactSource === "ball" ? "ball" : hasRacket ? "racket" : "wrist";
+      keyFrame = contact;
       m.elbowContact = contact.elbow;
       m.contactHeight = (contact.nose.y - contact.dw.y) / contact.torso;
       m.tossHeight = Math.max(...pre.map((x) => (x.nose.y - x.ow.y) / x.torso));
@@ -352,6 +354,7 @@ export class TennisAnalyzer {
       const G = T.ground;
       const contact = this._contactFrame(t0) ?? around.at(-1);
       m.contactSource = contact.contactSource ?? "wrist";
+      keyFrame = contact;
       m.elbowContact = contact.elbow;
       m.reach = dist(contact.dw, contact.shMid) / contact.torso; // Abstand Hand – Brustmitte
       // beidhändig = beide Hände während der ganzen Vorwärtsbewegung zusammen (nicht nur in einem Moment)
@@ -395,6 +398,6 @@ export class TennisAnalyzer {
     }
     issues.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "major" ? -1 : 1));
     const score = Math.max(0, 100 - issues.reduce((sum, i) => sum + (i.severity === "major" ? 25 : 12), 0));
-    return { index: this.reps.length + 1, view: this.view, metrics: m, issues, score, start: t0 - 1000, end: t0 + 600 };
+    return { index: this.reps.length + 1, view: this.view, metrics: m, issues, score, start: t0 - 1000, end: t0 + 600, keyT: keyFrame?.t ?? t0 };
   }
 }

@@ -382,6 +382,6 @@ export class SquatAnalyzer {
       feetMove: x.feetMove == null ? null : r3(x.feetMove), swr: x.swr == null ? null : r3(x.swr),
     }));
     const depthParts = { kneeVsHip: r3(kneeVsHip), hipDrop: r3(hipDrop), byKnee: r3(byKnee) };
-    return { index: this.reps.length + 1, view, metrics: m, depthParts, issues, score, ml, start: rep.start, end: endT, frames };
+    return { index: this.reps.length + 1, view, metrics: m, depthParts, issues, score, ml, start: rep.start, end: endT, keyT: fr[bottomIdx].t, frames };
   }
 }

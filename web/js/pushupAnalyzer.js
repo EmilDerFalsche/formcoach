@@ -166,6 +166,6 @@ export class PushupAnalyzer {
     if (m.descentSec < T.tooFastSec) add("too_fast", "minor", m.descentSec);
     issues.sort((a, b) => (a.severity === b.severity ? PRIORITY.indexOf(a.key) - PRIORITY.indexOf(b.key) : a.severity === "major" ? -1 : 1));
     const score = Math.max(0, 100 - issues.reduce((s, i) => s + (i.severity === "major" ? 25 : 12), 0));
-    return { index: this.reps.length + 1, view: "side", metrics: m, issues, score, start: rep.start, end: endT };
+    return { index: this.reps.length + 1, view: "side", metrics: m, issues, score, start: rep.start, end: endT, keyT: fr[bottomIdx].t };
   }
 }
