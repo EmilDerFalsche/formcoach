@@ -581,9 +581,9 @@ async function saveWorkout(row) {
   const before = computeStreak(homeItems);
   await renderHistory();
   const after = computeStreak(homeItems);
-  // erster Satz des Tages → Serie wächst
+  // erster Satz des Tages → Streak wächst
   if (!before.today && after.today) {
-    toast(after.current > 1 ? `🔥 Serie: ${after.current} Tage – weiter so!` : "🔥 Serie gestartet – komm morgen wieder!");
+    toast(after.current > 1 ? `🔥 Streak: ${after.current} Tage – weiter so!` : "🔥 Streak gestartet – komm morgen wieder!");
   }
 }
 
@@ -623,7 +623,7 @@ function renderStreak(items) {
   box.classList.toggle("on", s.today);
   box.classList.toggle("risk", s.atRisk);
   $("st-count").textContent = s.current;
-  $("st-label").textContent = s.current === 1 ? "Tag Serie" : "Tage Serie";
+  $("st-label").textContent = s.current === 1 ? "Tag Streak" : "Tage Streak";
   $("st-best").textContent = s.best > 1 ? `Rekord ${s.best}` : "";
   const now = new Date();
   $("st-week").innerHTML = s.week.map((done, i) => {
@@ -631,9 +631,9 @@ function renderStreak(items) {
     return `<span class="st-day ${done ? "done" : ""} ${i === 6 ? "today" : ""}"><i></i>${i === 6 ? "Heute" : WEEKDAYS[d.getDay()]}</span>`;
   }).join("");
   $("st-hint").textContent = s.today ? "Heute erledigt ✓ – morgen geht's weiter."
-    : s.atRisk ? "Heute noch einen Satz machen, um die Serie zu halten."
-    : items.length ? "Mach heute einen Satz, um eine neue Serie zu starten."
-    : "Jeden Tag ein Satz – so wächst deine Serie.";
+    : s.atRisk ? "Heute noch einen Satz machen, um deinen Streak zu halten."
+    : items.length ? "Mach heute einen Satz, um einen neuen Streak zu starten."
+    : "Jeden Tag ein Satz – so wächst dein Streak.";
 }
 
 async function renderHistory() {
