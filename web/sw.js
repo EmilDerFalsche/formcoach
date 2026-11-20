@@ -1,12 +1,12 @@
 // Service Worker: App offline nutzbar machen.
 // - App-Dateien: network-first mit Timeout (Updates kommen sofort, bei schlechtem Netz greift der Cache)
 // - MediaPipe (CDN, versioniert, ~10 MB): cache-first in eigenem Cache, der App-Updates überlebt
-const CACHE = "formcoach-v15";
+const CACHE = "formcoach-v16";
 const CDN_CACHE = "formcoach-cdn-v1";
 const SHELL = [
   "./", "index.html", "styles.css", "manifest.json", "icon.svg",
   "js/app.js", "js/pose.js", "js/features.js", "js/squatAnalyzer.js", "js/classifier.js", "js/feedback.js",
-  "js/cloud.js", "js/config.js", "js/exercises.js", "js/gesture.js", "js/pushupAnalyzer.js", "js/tennisAnalyzer.js", "js/snapshots.js",
+  "js/cloud.js", "js/config.js", "js/exercises.js", "js/gesture.js", "js/pushupAnalyzer.js", "js/tennisAnalyzer.js", "js/snapshots.js", "js/streak.js",
   "model/squat_model.json",
 ];
 const NETWORK_TIMEOUT_MS = 3000;

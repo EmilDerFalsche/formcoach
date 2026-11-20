@@ -7,6 +7,7 @@ import { ML_LABEL_TEXT, Voice, repCue, summarize } from "./feedback.js";
 import { Cloud, uuid } from "./cloud.js";
 import { EXERCISES, exerciseOf, photoUrl, HOME_EXERCISES, groupOf } from "./exercises.js";
 import { FrameRing, saveSnaps, loadSnaps } from "./snapshots.js";
+import { computeStreak } from "./streak.js";
 
 const ring = new FrameRing(); // letzte Sekunden in kleiner Auflösung -> Standbilder im Schlüsselmoment
 
@@ -577,7 +578,13 @@ async function saveWorkout(row) {
   let status;
   try { status = await cloud.saveWorkout(row); } catch (e) { console.error(e); status = "queued"; }
   showSaveStatus(status);
-  renderHistory();
+  const before = computeStreak(homeItems);
+  await renderHistory();
+  const after = computeStreak(homeItems);
+  // erster Satz des Tages → Serie wächst
+  if (!before.today && after.today) {
+    toast(after.current > 1 ? `🔥 Serie: ${after.current} Tage – weiter so!` : "🔥 Serie gestartet – komm morgen wieder!");
+  }
 }
 
 function showSaveStatus(status) {
@@ -609,6 +616,26 @@ const bg = (el, url) => { if (url) el.style.backgroundImage = `url("${url}")`; }
 /** Neuestes eigenes Standbild je Übung (für Highlights / Level-Karten) */
 const ownCovers = {};
 
+const WEEKDAYS = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+function renderStreak(items) {
+  const s = computeStreak(items);
+  const box = $("streak");
+  box.classList.toggle("on", s.today);
+  box.classList.toggle("risk", s.atRisk);
+  $("st-count").textContent = s.current;
+  $("st-label").textContent = s.current === 1 ? "Tag Serie" : "Tage Serie";
+  $("st-best").textContent = s.best > 1 ? `Rekord ${s.best}` : "";
+  const now = new Date();
+  $("st-week").innerHTML = s.week.map((done, i) => {
+    const d = new Date(now); d.setDate(now.getDate() + i - 6);
+    return `<span class="st-day ${done ? "done" : ""} ${i === 6 ? "today" : ""}"><i></i>${i === 6 ? "Heute" : WEEKDAYS[d.getDay()]}</span>`;
+  }).join("");
+  $("st-hint").textContent = s.today ? "Heute erledigt ✓ – morgen geht's weiter."
+    : s.atRisk ? "Heute noch einen Satz machen, um die Serie zu halten."
+    : items.length ? "Mach heute einen Satz, um eine neue Serie zu starten."
+    : "Jeden Tag ein Satz – so wächst deine Serie.";
+}
+
 async function renderHistory() {
   let res;
   try { res = await cloud.listWorkouts(); } catch (e) { console.warn(e); return; }
@@ -627,6 +654,7 @@ async function renderHistory() {
   const email = cloud.user?.email;
   $("p-avatar").textContent = email ? email[0].toUpperCase() : "F";
   $("p-name").textContent = email ? email.split("@")[0] : "Dein Training";
+  renderStreak(items);
 
   // Raster
   const grid = $("home-grid");

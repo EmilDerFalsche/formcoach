@@ -32,6 +32,7 @@
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></symbol>
     <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 19.5h16"/><path d="M7 16v-5M12 16V7M17 16v-8"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12.5 1.5c1.2 4.2 7 6.8 7 13.2a7.5 7.5 0 0 1-15 0c0-3.2 1.5-5.4 3.2-7 .3 2.3 1.4 3.8 2.9 4.4 0-4.4.5-7.6 1.9-10.6z"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 5 3 3v2H7v-2l3-3z"/><path d="M12 14v6"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
   </svg>
@@ -61,6 +62,15 @@
       </div>
       <p class="p-name" id="p-name">Dein Training</p>
       <p class="p-bio" id="p-bio">Technik-Analyse mit der Kamera – Videos bleiben auf deinem Gerät.<span class="sync-badge" id="history-source"></span></p>
+      <!-- Serie: jeden Tag mindestens ein Satz -->
+      <div class="streak" id="streak">
+        <div class="st-flame"><svg><use href="#i-flame" /></svg><b id="st-count">0</b></div>
+        <div class="st-body">
+          <div class="st-title"><span id="st-label">Tage Serie</span><span class="st-best" id="st-best"></span></div>
+          <div class="st-week" id="st-week" aria-label="Letzte 7 Tage"></div>
+          <p class="st-hint" id="st-hint"></p>
+        </div>
+      </div>
     </section>
 
     <!-- Übungen als Karten: Antippen = Training mit genau dieser Übung; Reihenfolge = zuletzt genutzt, Fokus vorne -->

@@ -28,9 +28,13 @@
   const { runCloudTests } = await import("./cloud.test.js");
   const cres = await runCloudTests();
   html += "\n\n<b>Konto & Synchronisierung</b>\n" + cres.map(r => `<span class="${r.ok ? "ok" : "fail"}">${r.ok ? "✓" : "✗"} ${r.name}</span>${r.info && !r.ok ? " – " + r.info : ""}`).join("\n");
-  const pass = res.every(r => r.ok) && cres.every(r => r.ok) && eres.every(r => r.ok);
+  // Serie
+  const { runStreakTests } = await import("./streak.test.js");
+  const sres = runStreakTests();
+  html += "\n\n<b>Serie</b>\n" + sres.map(r => `<span class="${r.ok ? "ok" : "fail"}">${r.ok ? "✓" : "✗"} ${r.name}</span>${r.ok ? "" : " – " + r.info}`).join("\n");
+  const pass = res.every(r => r.ok) && cres.every(r => r.ok) && eres.every(r => r.ok) && sres.every(r => r.ok);
   out.innerHTML = html;
-  window.__testResult = { pass, res, cres, eres };
+  window.__testResult = { pass, res, cres, eres, sres };
 </script>
 </body>
 </html>
