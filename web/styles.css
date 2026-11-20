@@ -169,6 +169,9 @@ select { background: var(--surface-2); color: var(--text); border: 1px solid var
 .btn svg { width: 18px; height: 18px; }
 .btn.primary { background: var(--grad); color: #fff;  }
 .btn.ghost { background: var(--surface-2); border: 1px solid var(--border); flex: 0 0 34%; }
+.btn.flip { flex: none; width: 52px; padding: 0; border-radius: 50%; background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, .18); color: #fff; box-shadow: var(--shadow); }
+.btn.flip svg { width: 24px; height: 24px; }
+.btn.flip.busy svg { animation: spin .8s linear infinite; }
 .btn.stop { flex: 0 1 320px; background: rgba(255, 255, 255, .94); color: #0b1220; box-shadow: var(--shadow); }
 .stop-dot { width: 12px; height: 12px; border-radius: 3px; background: var(--bad); }
 .link-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 18px; background: none; border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 12px; color: var(--muted); font-size: .88rem; cursor: pointer; }

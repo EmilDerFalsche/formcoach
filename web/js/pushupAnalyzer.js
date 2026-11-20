@@ -46,6 +46,13 @@ export class PushupAnalyzer {
 
   get view() { return this.base ? "side" : "unbekannt"; }
 
+  /** Kamera wurde gewechselt: laufende Wdh. verwerfen, Position neu erfassen (Satz läuft weiter). */
+  cameraChanged() {
+    if (["up", "down", "paused"].includes(this.state)) {
+      Object.assign(this, { state: "setup", base: null, setupCount: 0, rep: null, topElbow: 0, offPlank: 0 });
+    }
+  }
+
   _frame(lm, aspect) {
     const P = (i) => ({ x: lm[i].x * aspect, y: lm[i].y, v: lm[i].visibility ?? 1 });
     const sideVis = (ids) => ids.reduce((s, i) => s + (lm[i].visibility ?? 1), 0) / ids.length;

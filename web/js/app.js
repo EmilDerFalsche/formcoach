@@ -137,17 +137,16 @@ async function startLive() {
   show("screen-analyze");
   const front = $("opt-front").checked;
   $("stage").classList.toggle("mirror", front);
+  $("btn-flip").hidden = true;
   try {
     await prepare();
     $("loading-text").textContent = "Starte Kamera …";
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: front ? "user" : "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
-    });
+    stream = await openCamera(front);
     video.srcObject = stream;
     video.removeAttribute("src");
     await video.play();
     sizeCanvas();
+    $("btn-flip").hidden = false;
     try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
     $("loading").hidden = true;
     running = true;
@@ -163,9 +162,54 @@ async function startLive() {
   }
 }
 
+const openCamera = (front) => navigator.mediaDevices.getUserMedia({
+  video: { facingMode: front ? "user" : "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+  audio: false,
+});
+
+// Kamera während des Satzes umdrehen (vorne ↔ hinten). Der Satz läuft weiter, die Analyse kalibriert kurz neu.
+let flipping = false;
+async function flipCamera() {
+  if (flipping || !running || mode !== "live") return;
+  flipping = true;
+  const btn = $("btn-flip");
+  btn.classList.add("busy");
+  const front = !$("opt-front").checked;
+  const old = stream;
+  try {
+    old?.getTracks().forEach((t) => t.stop()); // manche Handys erlauben nur eine Kamera gleichzeitig
+    const s = await openCamera(front);
+    if (!running || mode !== "live") { s.getTracks().forEach((t) => t.stop()); return; }
+    stream = s;
+    video.srcObject = s;
+    await video.play();
+    sizeCanvas();
+    $("stage").classList.toggle("mirror", front);
+    $("opt-front").checked = front;
+    saveSettings();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    analyzer?.cameraChanged?.();
+    toast(front ? "Frontkamera" : "Rückkamera");
+  } catch (e) {
+    console.error(e);
+    // zurück zur bisherigen Kamera
+    try {
+      stream = await openCamera(!front);
+      video.srcObject = stream;
+      await video.play();
+      sizeCanvas();
+    } catch (e2) { console.error(e2); }
+    toast("Kamera konnte nicht gewechselt werden");
+  } finally {
+    flipping = false;
+    btn.classList.remove("busy");
+  }
+}
+$("btn-flip").addEventListener("click", flipCamera);
+
 function liveLoop() {
   if (!running || mode !== "live") return;
-  if (video.readyState >= 2) processFrame(performance.now());
+  if (!flipping && video.readyState >= 2) processFrame(performance.now());
   requestAnimationFrame(liveLoop);
 }
 
@@ -413,6 +457,7 @@ function onRep(rep) {
 // ---------- Abschluss ----------
 function stopMedia() {
   running = false;
+  $("btn-flip").hidden = true;
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
   if (video.src) { video.pause(); URL.revokeObjectURL(video.src); video.removeAttribute("src"); video.load(); }
   try { wakeLock?.release(); } catch {}

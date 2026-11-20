@@ -81,6 +81,13 @@ export class TennisAnalyzer {
 
   get view() { return this.base?.view ?? "unbekannt"; }
 
+  /** Kamera wurde gewechselt: laufenden Schwung verwerfen, Perspektive neu erfassen (Satz läuft weiter). */
+  cameraChanged() {
+    if (this.state === "ready") {
+      Object.assign(this, { state: "setup", base: null, setupCount: 0, swing: null, buf: [], swrWin: [], speed: 0, speedD: 0, speedO: 0 });
+    }
+  }
+
   _frame(lm, aspect, t) {
     const P = (i) => ({ x: lm[i].x * aspect, y: lm[i].y, v: lm[i].visibility ?? 1 });
     const R = this.hand === "R";

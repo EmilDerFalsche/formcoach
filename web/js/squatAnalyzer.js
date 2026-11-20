@@ -199,6 +199,11 @@ export class SquatAnalyzer {
     return Math.hypot(a.x - b.ankleX, a.y - b.ankleY) / b.shin;
   }
 
+  /** Kamera wurde gewechselt: laufende Wdh. verwerfen und neu kalibrieren (Satz läuft weiter). */
+  cameraChanged() {
+    if (this.state === "standing" || this.state === "down") this._recalibrate("Kamera gewechselt");
+  }
+
   _recalibrate(reason) {
     this.state = "calibrating";
     this.base = null;
