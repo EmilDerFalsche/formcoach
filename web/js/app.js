@@ -465,13 +465,20 @@ function renderResult(reps, sum, trace, view, ex = activeEx) {
   $("res-score").textContent = reps.length ? sum.avgScore : "–";
   $("score-ring").style.setProperty("--p", reps.length ? sum.avgScore : 0);
   $("score-ring").className = `score-ring ${reps.length ? scoreClass(sum.avgScore) : ""}`;
-  const viewText = ex.tennis || ex.id === "pushup" ? "" : ` · ${VIEW_TEXT[view] ?? ""}`;
+  const viewText = ex.tennis || ex.id === "pushup" || !reps.length ? "" : ` · ${VIEW_TEXT[view] ?? ""}`;
   $("res-title").textContent = `${ex.name} · ${reps.length} ${reps.length === 1 ? ex.unit.one : ex.unit.many}${viewText}`;
   $("res-headline").textContent = sum.headline;
 
   const tips = $("res-tips");
   tips.innerHTML = "";
-  if (!sum.ranked.length) tips.innerHTML = `<p class="ok">Keine Fehler erkannt – stark!</p>`;
+  if (!reps.length) {
+    // Nichts erkannt → kein Lob, sondern Hilfe, woran es gelegen haben kann
+    const checks = ex.tennis
+      ? ["Ganzer Körper inkl. Schlagarm im Bild – auch beim Ausholen und Durchschwingen", "Richtigen Schlag gewählt (Aufschlag, Vorhand oder Rückhand) und die richtige Schlaghand", "Gutes Licht, Kamera ruhig aufgestellt, Abstand ca. 3–5 m"]
+      : ["Ganzer Körper von Kopf bis Fuß im Bild", "Volle Wiederholungen gemacht (ganz runter und wieder ganz hoch)", "Gutes Licht, Kamera ruhig aufgestellt, Abstand ca. 2–3 m"];
+    tips.innerHTML = `<div class="tip"><div class="tip-head"><b>Woran es liegen kann</b></div>
+      <div class="tip-sec how"><span class="tip-label">Prüfe beim nächsten Mal</span><ol>${checks.map((c) => `<li>${c}</li>`).join("")}</ol></div></div>`;
+  } else if (!sum.ranked.length) tips.innerHTML = `<p class="ok">Keine Fehler erkannt – stark!</p>`;
   sum.ranked.forEach((r, i) => {
     // Beispiel-Wiederholung für "Gesehen": die deutlichste mit diesem Fehler
     const ex1 = reps.find((x) => x.issues.some((k) => k.key === r.key && k.severity === "major")) ?? reps.find((x) => x.issues.some((k) => k.key === r.key));
@@ -501,6 +508,7 @@ function renderResult(reps, sum, trace, view, ex = activeEx) {
 
   const list = $("res-reps");
   list.innerHTML = "";
+  list.closest(".panel").hidden = !reps.length;
   const label = ex.tennis ? "Schlag" : "Wdh.";
   reps.forEach((r) => {
     const el = document.createElement("details");
